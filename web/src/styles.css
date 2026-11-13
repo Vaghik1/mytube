@@ -129,8 +129,68 @@ main::-webkit-scrollbar { display: none; }
 .login-url { font-size: 3.2rem; font-weight: 700; }
 .login-code { font-size: 6rem; font-weight: 700; letter-spacing: .6rem; background: var(--panel-2); padding: 1.6rem 4rem; border-radius: 1.6rem; margin: 1rem 0; }
 
-/* Phones / desktop browsers: keep it usable */
-@media (max-width: 700px) {
-  html { font-size: 7px; }
+/* ── Phones held upright (and narrow windows) ───────────────── */
+@media (max-width: 820px) {
+  html { font-size: 10px; }
+  body { font-size: 1.5rem; }
+  .layout { flex-direction: column; }
+  main { width: 100%; }
+  .page { padding: 1.4rem 1.2rem calc(8rem + env(safe-area-inset-bottom)); }
+
+  /* Side menu becomes a bottom tab bar */
+  .sidebar, .sidebar:focus-within {
+    position: fixed; left: 0; right: 0; bottom: 0; top: auto; width: auto; height: auto;
+    flex-direction: row; justify-content: space-around; gap: 0;
+    padding: .4rem .2rem calc(.4rem + env(safe-area-inset-bottom));
+    background: #0f0f0f; border-top: 1px solid #262626; box-shadow: none; z-index: 30;
+  }
+  .sidebar .logo, .sidebar .me { display: none; }
+  .sidebar .label { opacity: 1; font-size: 1.05rem; }
+  .nav-item { flex: 1; flex-direction: column; gap: .3rem; padding: .6rem .2rem; border-radius: 1rem; min-width: 0; }
+  .nav-item:focus { background: none; color: var(--text); }
+  .nav-item:focus .icon { color: inherit; }
+  .icon { width: 2.4rem; height: 2.4rem; }
+
+  .grid { grid-template-columns: 1fr; gap: 2rem; padding: 0; }
+  .card { padding: 0; }
+  .card-title { font-size: 1.55rem; }
+  .card-meta, .card-note { font-size: 1.3rem; }
+  .chips { padding-bottom: 1.2rem; }
+  .chip { font-size: 1.4rem; padding: .8rem 1.4rem; }
+  .section-title { font-size: 1.8rem; margin: 1.6rem 0 1rem; }
+  .live-row { padding: .4rem 0 1rem; }
+  .live-row .card, .live-row.big .card { flex-basis: 86%; }
+  .live-row.big .card:only-child { flex-basis: 100%; }
+  .channel-head { flex-wrap: wrap; gap: 1.4rem; }
+  .channel-head img { width: 6.4rem; height: 6.4rem; }
+  .channel-head h1 { font-size: 2.2rem; }
+  .banner { height: 9rem; }
+  .login { padding: 2rem; font-size: 1.6rem; }
+  .login-code { font-size: 3.6rem; letter-spacing: .3rem; padding: 1.2rem 2rem; }
+  .login-url { font-size: 2.2rem; }
+  .logo.big { font-size: 3rem; }
+}
+@media (min-width: 560px) and (max-width: 820px) {
   .grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ── Touch screens: no TV focus effects ───────────────────── */
+html.touch .card:focus { transform: none; box-shadow: none; background: none; }
+html.touch .chip:focus, html.touch .btn:focus { outline: none; transform: none; }
+html.touch .sidebar:focus-within { width: var(--sidebar); box-shadow: none; }
+html.touch .sidebar:focus-within .label { opacity: 0; }
+html.touch .card:active { opacity: .7; }
+
+/* ── Phone player: normal page with the video on top ──────── */
+.watch.web { position: fixed; inset: 0; overflow-y: auto; background: var(--bg); -webkit-overflow-scrolling: touch; }
+.watch.web .watch-top { position: sticky; top: 0; z-index: 5; padding: .8rem 1.2rem; background: var(--bg); }
+.watch.web .player { position: relative; inset: auto; width: 100%; aspect-ratio: 16 / 9; max-height: 75vh; background: #000; pointer-events: auto; }
+.watch.web .player iframe { pointer-events: auto; }
+.watch.web .player-error { position: relative; inset: auto; padding: 2rem 1.4rem; font-size: 1.5rem; background: var(--panel); }
+.watch.web .details { position: static; background: none; overflow: visible; }
+.watch.web .details-inner { padding: 1.4rem 1.2rem 4rem; }
+.watch.web .details h1 { font-size: 2rem; }
+.watch.web .description { max-height: none; font-size: 1.35rem; }
+@media (min-width: 821px) {
+  html.touch .watch.web .details-inner { max-width: 120rem; margin: 0 auto; }
 }

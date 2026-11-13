@@ -54,7 +54,7 @@ function candidates(): HTMLElement[] {
 }
 
 export function focusEl(el: HTMLElement | null | undefined, center = true) {
-  if (!el) return;
+  if (!el || isTouch) return;
   el.focus({ preventScroll: true });
   el.scrollIntoView({ block: center ? 'center' : 'nearest', inline: 'nearest', behavior: 'smooth' });
 }
@@ -152,6 +152,11 @@ export function initTV() {
     true,
   );
 
+  if (isTouch) {
+    document.documentElement.classList.add('touch');
+    (window as any).__tvBack = handleBack;
+    return;
+  }
   // Keep something focused at all times so the remote always works.
   const keepFocus = () => {
     const a = document.activeElement;
@@ -170,6 +175,9 @@ export function initTV() {
 type Bridge = { openInYouTube(id: string): void; exitApp(): void; appVersion?(): string };
 export const android: Bridge | undefined = (window as any).MyTubeAndroid;
 export const isTVApp = !!android;
+/** Phones and tablets: touch screen and not the TV app. Uses tap controls instead of remote navigation. */
+export const isTouch =
+  !isTVApp && typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
 
 export function openInYouTube(videoId: string) {
   if (android) android.openInYouTube(videoId);

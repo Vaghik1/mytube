@@ -7,7 +7,7 @@ import { dismissPick } from '../agent';
 import { SubscribeButton } from './Channel';
 import type { Queue } from '../components/VideoCard';
 import { VideoGrid } from '../components/VideoGrid';
-import { focusFirst, openInYouTube, pushBackHandler, pushKeyHandler } from '../tv';
+import { focusFirst, isTouch, openInYouTube, pushBackHandler, pushKeyHandler } from '../tv';
 import { fmtCount, fmtDuration, timeAgo } from '../util';
 
 declare global {
@@ -99,9 +99,10 @@ export function Watch() {
         height: '100%',
         playerVars: {
           autoplay: 1,
-          controls: 0,
-          disablekb: 1,
-          fs: 0,
+          // TV: our own remote-friendly controls. Phone: YouTube's normal tap controls.
+          controls: isTouch ? 1 : 0,
+          disablekb: isTouch ? 0 : 1,
+          fs: isTouch ? 1 : 0,
           rel: 0,
           iv_load_policy: 3,
           playsinline: 1,
@@ -195,6 +196,7 @@ export function Watch() {
 
   // Remote control keys while the video is in front.
   useEffect(() => {
+    if (isTouch) return;
     const off = pushKeyHandler((e) => {
       if (modeRef.current !== 'player' || errorRef.current) return false;
       const p = player.current;
@@ -271,10 +273,17 @@ export function Watch() {
   const pct = time.dur ? (time.cur / time.dur) * 100 : 0;
 
   return (
-    <div className="watch">
+    <div className={`watch${isTouch ? ' web' : ''}`}>
+      {isTouch && (
+        <div className="watch-top">
+          <button className="btn" onClick={() => (window.history.length > 1 ? nav(-1) : nav('/'))}>
+            ← Back
+          </button>
+        </div>
+      )}
       <div className="player" ref={holder} />
 
-      {mode === 'player' && !error && (osd || !playing) && (
+      {!isTouch && mode === 'player' && !error && (osd || !playing) && (
         <div className="osd">
           <div className="osd-top">
             <div className="osd-title">{video?.title}</div>
@@ -293,7 +302,7 @@ export function Watch() {
         </div>
       )}
 
-      {error && mode === 'player' && (
+      {error && (isTouch || mode === 'player') && (
         <div className="player-error" data-focus-trap>
           <p>{ERRORS[error] || `Playback error (${error}).`}</p>
           <div className="row">
@@ -312,7 +321,7 @@ export function Watch() {
         </div>
       )}
 
-      {mode === 'details' && (
+      {(isTouch || mode === 'details') && (
         <div className="details" data-focus-trap>
           <div className="details-inner">
             <h1>{video?.title}</h1>
@@ -320,9 +329,11 @@ export function Watch() {
               {video && `${fmtCount(video.views)} views • ${timeAgo(video.publishedAt)}`}
             </div>
             <div className="row">
-              <button className="btn focusable" data-autofocus onClick={() => setMode('player')}>
-                ▲ Back to video
-              </button>
+              {!isTouch && (
+                <button className="btn focusable" data-autofocus onClick={() => setMode('player')}>
+                  ▲ Back to video
+                </button>
+              )}
               <button className={`btn focusable${rating === 'like' ? ' on' : ''}`} onClick={() => toggleRate('like')}>
                 👍 {video ? fmtCount(video.likes) : ''}
               </button>
