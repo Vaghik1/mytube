@@ -6,7 +6,8 @@
 //
 // Env vars (Vercel → Settings → Environment Variables):
 //   MYTUBE_API_KEY          a long random secret you choose; give it to ChatGPT
-//   BLOB_READ_WRITE_TOKEN   added automatically when you connect a Blob store to the project
+//   BLOB_STORE_ID           added automatically when you connect a Blob store (uses Vercel OIDC sign-in);
+//                           an older-style BLOB_READ_WRITE_TOKEN also works
 //   GOOGLE_CLIENT_ID        already set; used to check the TV app's sign-in token
 //
 // All routes are rewritten to this single file in vercel.json.
@@ -63,7 +64,7 @@ function blobToken(): string | undefined {
 
 async function load(): Promise<State> {
   const token = blobToken();
-  if (!token) {
+  if (!token && !process.env.BLOB_STORE_ID) {
     const seen = Object.keys(process.env).filter((k) => /BLOB|STORAGE/i.test(k));
     throw new Error(
       `MyTube storage is not connected yet: no BLOB_READ_WRITE_TOKEN in this deployment (related variables seen: ${seen.join(', ') || 'none'}). ` +
@@ -72,7 +73,7 @@ async function load(): Promise<State> {
   }
   for (const a of [access, access === 'private' ? 'public' : 'private'] as const) {
     try {
-      const r = await get(PATH(), { access: a, useCache: false, token });
+      const r = await get(PATH(), { access: a, useCache: false, ...(token ? { token } : {}) });
       access = a;
       if (!r || r.statusCode !== 200) return { picks: [] };
       const text = await new Response(r.stream).text();
@@ -95,10 +96,10 @@ async function save(s: State) {
   const body = JSON.stringify(s);
   const token = blobToken();
   try {
-    await put(PATH(), body, { access, addRandomSuffix: false, allowOverwrite: true, contentType: 'application/json', token });
+    await put(PATH(), body, { access, addRandomSuffix: false, allowOverwrite: true, contentType: 'application/json', ...(token ? { token } : {}) });
   } catch (e) {
     access = access === 'private' ? 'public' : 'private';
-    await put(PATH(), body, { access, addRandomSuffix: false, allowOverwrite: true, contentType: 'application/json', token });
+    await put(PATH(), body, { access, addRandomSuffix: false, allowOverwrite: true, contentType: 'application/json', ...(token ? { token } : {}) });
   }
 }
 
