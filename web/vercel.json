@@ -1,0 +1,10 @@
+{
+  "redirects": [
+    {
+      "source": "/apk",
+      "destination": "https://github.com/Vaghik1/mytube/releases/latest/download/mytube.apk",
+      "permanent": false
+    }
+  ],
+  "rewrites": [{ "source": "/((?!api/|assets/).*)", "destination": "/index.html" }]
+}
