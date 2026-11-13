@@ -172,12 +172,13 @@ export function initTV() {
 
 // ── Android app bridge (present only inside the TV app) ─────────
 
-type Bridge = { openInYouTube(id: string): void; exitApp(): void; appVersion?(): string };
+type Bridge = { openInYouTube(id: string): void; exitApp(): void; appVersion?(): string; isTv?(): boolean };
 export const android: Bridge | undefined = (window as any).MyTubeAndroid;
-export const isTVApp = !!android;
-/** Phones and tablets: touch screen and not the TV app. Uses tap controls instead of remote navigation. */
-export const isTouch =
-  !isTVApp && typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+const hasTouch = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+/** Running inside the MyTube app on a TV (remote control). The same app on a phone is not a TV. */
+export const isTVApp = !!android && (android.isTv ? !!android.isTv() : !hasTouch);
+/** Phones and tablets (browser or app): tap controls instead of remote navigation. */
+export const isTouch = !isTVApp && hasTouch;
 
 export function openInYouTube(videoId: string) {
   if (android) android.openInYouTube(videoId);

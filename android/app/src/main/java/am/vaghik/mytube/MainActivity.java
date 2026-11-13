@@ -1,6 +1,8 @@
 package am.vaghik.mytube;
 
 import android.app.Activity;
+import android.app.UiModeManager;
+import android.content.res.Configuration;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.graphics.Color;
@@ -175,6 +177,13 @@ public class MainActivity extends Activity {
                     }
                 }
             });
+        }
+
+        /** True on Google TV / Android TV, false on phones and tablets. */
+        @JavascriptInterface
+        public boolean isTv() {
+            UiModeManager um = (UiModeManager) getSystemService(UI_MODE_SERVICE);
+            return um != null && um.getCurrentModeType() == Configuration.UI_MODE_TYPE_TELEVISION;
         }
 
         @JavascriptInterface
