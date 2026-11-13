@@ -17,7 +17,7 @@ export function Settings() {
 
   return (
     <div className="page settings">
-      <h2 className="section-title">Region (Trending & categories)</h2>
+      <h2 className="section-title">Region (only for the Trending tab and categories)</h2>
       <div className="chips wrap">
         {REGIONS.map(([code, name]) => (
           <button
@@ -38,9 +38,6 @@ export function Settings() {
         </button>
         <button className={`chip focusable${s.autoplayNext ? ' active' : ''}`} onClick={() => update({ autoplayNext: !s.autoplayNext })}>
           Autoplay next: {s.autoplayNext ? 'On' : 'Off'}
-        </button>
-        <button className="chip focusable" onClick={() => update({ subsPerTrending: (s.subsPerTrending % 4) + 1 })}>
-          For you mix: {s.subsPerTrending} subscription : 1 trending
         </button>
       </div>
 

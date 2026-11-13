@@ -267,23 +267,26 @@ export async function getSubscriptionFeed(): Promise<Video[]> {
   return applyFilters(vids);
 }
 
-/** Starter feed before MyTube has learned anything: subscriptions mixed with trending. */
-async function getMixFeed(): Promise<Video[]> {
-  const { subsPerTrending } = loadSettings();
-  const [subs, trending] = await Promise.all([
+/** Starter feed before MyTube has learned anything: only your own signals, no regional charts.
+ *  New uploads from your subscriptions mixed with uploads from channels whose videos you liked. */
+async function getStarterFeed(): Promise<Video[]> {
+  const [subs, liked] = await Promise.all([
     getSubscriptionFeed().catch(() => [] as Video[]),
-    cached(`trend.${loadSettings().region}`, 30 * 60_000, () => getPopular().then((p) => p.items)).then(applyFilters),
+    cached('fy.likedlist', 3600_000, () => getLiked().then((p) => p.items)).catch(() => [] as Video[]),
   ]);
+  const likedCh = [...new Set(liked.map((v) => v.channelId))].slice(0, 8);
+  const fromLiked = await cached(`fy.liked.${likedCh.join(',')}`, 3600_000, () => channelsUploads(likedCh, 6)).catch(
+    () => [] as Video[],
+  );
+  const seen = seenIds();
   const out: Video[] = [];
-  const seen = new Set<string>();
-  const push = (v?: Video) => v && !seen.has(v.id) && (seen.add(v.id), out.push(v));
-  let si = 0;
-  let ti = 0;
-  while (si < subs.length || ti < trending.length) {
-    for (let k = 0; k < Math.max(1, subsPerTrending); k++) push(subs[si++]);
-    push(trending[ti++]);
+  const ids = new Set<string>();
+  const push = (v?: Video) => v && !ids.has(v.id) && !seen.has(v.id) && (ids.add(v.id), out.push(v));
+  for (let i = 0; i < Math.max(subs.length, fromLiked.length); i++) {
+    push(subs[i]);
+    push(fromLiked[i]);
   }
-  return out;
+  return applyFilters(out);
 }
 
 export async function isSubscribed(channelId: string): Promise<string | null> {
@@ -393,13 +396,12 @@ async function channelsUploads(ids: string[], perChannel: number): Promise<Video
 
 export async function getForYou(): Promise<Video[]> {
   const profile = buildProfile();
-  if (profile.watches < 3) return getMixFeed();
+  if (profile.watches < 3) return getStarterFeed();
 
   const topChannels = profile.channels.slice(0, 10);
   const queries = [...new Set(profile.seeds.slice(0, 3).map((w) => seedQuery(w, profile)).filter(Boolean))];
-  const topCat = profile.cats[0]?.id;
 
-  const [fromChannels, fromSearch, fromCategory, fromSubs] = await Promise.all([
+  const [fromChannels, fromSearch, fromSubs] = await Promise.all([
     cached(`fy.ch.${topChannels.map((c) => c.id).join(',')}`, 60 * 60_000, () =>
       channelsUploads(topChannels.map((c) => c.id), 8),
     ).catch(() => [] as Video[]),
@@ -409,11 +411,6 @@ export async function getForYou(): Promise<Video[]> {
         cached(`fy.q.${q}`, 12 * 3600_000, () => search(q).then((p) => p.items)).catch(() => [] as Video[]),
       ),
     ).then((r) => r.flat()),
-    topCat
-      ? cached(`fy.cat.${loadSettings().region}.${topCat}`, 60 * 60_000, () => getPopular(topCat).then((p) => p.items)).catch(
-          () => [] as Video[],
-        )
-      : Promise.resolve([] as Video[]),
     getSubscriptionFeed().catch(() => [] as Video[]),
   ]);
 
@@ -447,7 +444,6 @@ export async function getForYou(): Promise<Video[]> {
   add(fromChannels, 0.3);
   add(fromSearch, 0.2);
   add(fromSubs, 0);
-  add(fromCategory, -0.2);
 
   // Pick the best, but don't let one channel take over the screen.
   const pool2 = [...scored.values()];

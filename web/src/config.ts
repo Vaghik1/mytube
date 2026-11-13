@@ -5,7 +5,7 @@
 // ─────────────────────────────────────────────────────────────
 
 export type Settings = {
-  /** Country used for Trending and categories (ISO code, e.g. "AM", "US"). */
+  /** Country used only by the Trending tab and category chips (never by "For you"). */
   region: string;
   /** Hide videos of 3 minutes or less (YouTube Shorts) from every feed. */
   hideShorts: boolean;
@@ -15,19 +15,16 @@ export type Settings = {
   blockedKeywords: string[];
   /** How many of your subscriptions are checked for new uploads (each costs 1 API unit). */
   feedChannelLimit: number;
-  /** In "For you": how many subscription videos to show for each trending video. */
-  subsPerTrending: number;
   /** Play the next video in the list automatically when one ends. */
   autoplayNext: boolean;
 };
 
 export const defaultSettings: Settings = {
-  region: 'AM',
+  region: 'US',
   hideShorts: false,
   blockedChannels: [],
   blockedKeywords: [],
   feedChannelLimit: 50,
-  subsPerTrending: 2,
   autoplayNext: true,
 };
 
