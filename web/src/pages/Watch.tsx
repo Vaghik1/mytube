@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getChannelVideos, getRating, getVideo, getVideos, rate, type Video } from '../api';
 import { loadSettings } from '../config';
+import { markLiked, notInterested, recordWatch } from '../history';
 import { SubscribeButton } from './Channel';
 import type { Queue } from '../components/VideoCard';
 import { VideoGrid } from '../components/VideoGrid';
@@ -162,14 +163,34 @@ export function Watch() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [video?.id]);
 
-  // Progress polling.
+  // Progress polling + learning: count the seconds you actually watch.
+  const videoRef = useRef<Video | undefined>(undefined);
+  videoRef.current = video;
+  const watched = useRef(0);
+  const lastSaved = useRef(0);
   useEffect(() => {
     const t = window.setInterval(() => {
       const p = player.current;
-      if (p?.getCurrentTime) setTime({ cur: p.getCurrentTime() || 0, dur: p.getDuration() || 0 });
+      if (!p?.getCurrentTime) return;
+      setTime({ cur: p.getCurrentTime() || 0, dur: p.getDuration() || 0 });
+      if (p.getPlayerState?.() === 1) {
+        watched.current += 0.5;
+        if (videoRef.current && watched.current - lastSaved.current >= 15) {
+          lastSaved.current = watched.current;
+          recordWatch(videoRef.current, watched.current);
+        }
+      }
     }, 500);
     return () => window.clearInterval(t);
   }, []);
+  // Save what was watched when switching video or leaving the player.
+  useEffect(() => {
+    watched.current = 0;
+    lastSaved.current = 0;
+    return () => {
+      if (videoRef.current) recordWatch(videoRef.current, watched.current);
+    };
+  }, [id]);
 
   // Remote control keys while the video is in front.
   useEffect(() => {
@@ -241,6 +262,8 @@ export function Watch() {
   const toggleRate = async (r: 'like' | 'dislike') => {
     const nextR = rating === r ? 'none' : r;
     setRating(nextR);
+    if (video) markLiked(video, nextR === 'like');
+    if (video && nextR === 'dislike') notInterested(video);
     rate(id, nextR).catch(() => setRating(rating));
   };
 
@@ -314,6 +337,17 @@ export function Watch() {
               <button className="btn focusable" onClick={() => openInYouTube(id)}>
                 Open in YouTube
               </button>
+              {video && (
+                <button
+                  className="btn focusable"
+                  onClick={() => {
+                    notInterested(video);
+                    if (!goNext()) nav(-1);
+                  }}
+                >
+                  Not interested
+                </button>
+              )}
             </div>
             {video?.description && <p className="description">{video.description.slice(0, 700)}</p>}
             {upNext.length > 0 && (

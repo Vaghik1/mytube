@@ -1,6 +1,7 @@
 // YouTube Data API v3 wrapper. Daily quota is 10,000 units: most calls cost 1, search costs 100.
 import { getAccessToken } from './auth';
 import { loadSettings } from './config';
+import { buildProfile, seedQuery, seenIds, tokens } from './history';
 
 const BASE = 'https://www.googleapis.com/youtube/v3/';
 
@@ -16,6 +17,8 @@ export type Video = {
   likes: number;
   live: boolean;
   description: string;
+  categoryId?: string;
+  tags?: string[];
 };
 
 export type Channel = {
@@ -135,6 +138,8 @@ function toVideo(v: any): Video {
     likes: Number(v.statistics?.likeCount || 0),
     live: v.snippet?.liveBroadcastContent === 'live',
     description: v.snippet?.description || '',
+    categoryId: v.snippet?.categoryId,
+    tags: v.snippet?.tags,
   };
 }
 
@@ -262,8 +267,8 @@ export async function getSubscriptionFeed(): Promise<Video[]> {
   return applyFilters(vids);
 }
 
-/** "For you": your subscriptions' new uploads mixed with trending. */
-export async function getForYou(): Promise<Video[]> {
+/** Starter feed before MyTube has learned anything: subscriptions mixed with trending. */
+async function getMixFeed(): Promise<Video[]> {
   const { subsPerTrending } = loadSettings();
   const [subs, trending] = await Promise.all([
     getSubscriptionFeed().catch(() => [] as Video[]),
@@ -369,4 +374,98 @@ export async function getChannelVideos(channelId: string, pageToken?: string): P
   const ch = await getChannel(channelId);
   if (!ch?.uploads) return { items: [] };
   return getPlaylistVideos(ch.uploads, pageToken);
+}
+
+// ── "For you": learned from what you watch ─────────────────────
+
+/** Latest uploads from a list of channels (1 unit per channel + 1 per 50 for details). */
+async function channelsUploads(ids: string[], perChannel: number): Promise<Video[]> {
+  if (!ids.length) return [];
+  const chans = await yt('channels', { part: 'contentDetails', id: ids.slice(0, 50).join(',') });
+  const uploads: string[] = (chans.items || [])
+    .map((c: any) => c.contentDetails?.relatedPlaylists?.uploads)
+    .filter(Boolean);
+  const pages = await pool(uploads, 6, (pl) =>
+    yt('playlistItems', { part: 'contentDetails', playlistId: pl, maxResults: perChannel }).catch(() => ({ items: [] })),
+  );
+  return getVideos(pages.flatMap((p: any) => (p.items || []).map((i: any) => i.contentDetails.videoId)));
+}
+
+export async function getForYou(): Promise<Video[]> {
+  const profile = buildProfile();
+  if (profile.watches < 3) return getMixFeed();
+
+  const topChannels = profile.channels.slice(0, 10);
+  const queries = [...new Set(profile.seeds.slice(0, 3).map((w) => seedQuery(w, profile)).filter(Boolean))];
+  const topCat = profile.cats[0]?.id;
+
+  const [fromChannels, fromSearch, fromCategory, fromSubs] = await Promise.all([
+    cached(`fy.ch.${topChannels.map((c) => c.id).join(',')}`, 60 * 60_000, () =>
+      channelsUploads(topChannels.map((c) => c.id), 8),
+    ).catch(() => [] as Video[]),
+    Promise.all(
+      queries.map((q) =>
+        // Search costs 100 units, so each topic is searched at most twice a day.
+        cached(`fy.q.${q}`, 12 * 3600_000, () => search(q).then((p) => p.items)).catch(() => [] as Video[]),
+      ),
+    ).then((r) => r.flat()),
+    topCat
+      ? cached(`fy.cat.${loadSettings().region}.${topCat}`, 60 * 60_000, () => getPopular(topCat).then((p) => p.items)).catch(
+          () => [] as Video[],
+        )
+      : Promise.resolve([] as Video[]),
+    getSubscriptionFeed().catch(() => [] as Video[]),
+  ]);
+
+  // Score every candidate against your taste profile.
+  const seen = seenIds();
+  const maxCh = topChannels[0]?.score || 1;
+  const chScore = new Map(profile.channels.map((c) => [c.id, c.score / maxCh]));
+  const termTop = profile.terms.slice(0, 60);
+  const maxT = termTop[0]?.score || 1;
+  const termScore = new Map(termTop.map((t) => [t.term, t.score / maxT]));
+  const subIds = new Set(fromSubs.map((v) => v.channelId));
+
+  const scored = new Map<string, { v: Video; s: number }>();
+  const add = (list: Video[], bonus: number) => {
+    for (const v of applyFilters(list)) {
+      if (seen.has(v.id) || scored.has(v.id)) continue;
+      const ageDays = (Date.now() - new Date(v.publishedAt).getTime()) / 86400_000;
+      const words = new Set([...tokens(v.title), ...(v.tags || []).flatMap(tokens)]);
+      let topic = 0;
+      words.forEach((w) => (topic += termScore.get(w) || 0));
+      const s =
+        2 * Math.max(0, chScore.get(v.channelId) || 0) +
+        Math.min(2, topic) +
+        1.2 / (1 + Math.max(0, ageDays) / 7) +
+        (subIds.has(v.channelId) ? 0.3 : 0) +
+        bonus +
+        Math.random() * 0.4;
+      scored.set(v.id, { v, s });
+    }
+  };
+  add(fromChannels, 0.3);
+  add(fromSearch, 0.2);
+  add(fromSubs, 0);
+  add(fromCategory, -0.2);
+
+  // Pick the best, but don't let one channel take over the screen.
+  const pool2 = [...scored.values()];
+  const perChannel = new Map<string, number>();
+  const out: Video[] = [];
+  while (pool2.length && out.length < 120) {
+    let bi = 0;
+    let best = -Infinity;
+    pool2.forEach((c, i) => {
+      const adj = c.s - 0.7 * (perChannel.get(c.v.channelId) || 0);
+      if (adj > best) {
+        best = adj;
+        bi = i;
+      }
+    });
+    const [pick] = pool2.splice(bi, 1);
+    perChannel.set(pick.v.channelId, (perChannel.get(pick.v.channelId) || 0) + 1);
+    out.push(pick.v);
+  }
+  return out;
 }

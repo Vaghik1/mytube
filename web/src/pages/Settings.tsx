@@ -3,9 +3,11 @@ import { clearCache } from '../api';
 import { signOut } from '../auth';
 import { REGIONS, defaultSettings, loadSettings, saveSettings, type Settings as S } from '../config';
 import { android } from '../tv';
+import { buildProfile, clearHistory } from '../history';
 
 export function Settings() {
   const [s, setS] = useState<S>(loadSettings);
+  const [profile, setProfile] = useState(buildProfile);
   const update = (patch: Partial<S>) => {
     const next = { ...s, ...patch };
     setS(next);
@@ -50,6 +52,28 @@ export function Settings() {
           </p>
         </>
       )}
+
+      <h2 className="section-title">What MyTube has learned ({profile.watches} videos watched)</h2>
+      {profile.watches < 3 ? (
+        <p className="muted">Watch a few videos and "For you" will start adapting to you.</p>
+      ) : (
+        <>
+          <p className="muted">Top channels: {profile.channels.slice(0, 6).map((c) => c.title).join(', ') || '—'}</p>
+          <p className="muted">Top topics: {profile.terms.slice(0, 10).map((t) => t.term).join(', ') || '—'}</p>
+        </>
+      )}
+      <div className="chips wrap">
+        <button
+          className="chip focusable"
+          onClick={() => {
+            clearHistory();
+            clearCache('fy.');
+            setProfile(buildProfile());
+          }}
+        >
+          Clear watch history
+        </button>
+      </div>
 
       <h2 className="section-title">Account</h2>
       <div className="chips wrap">
