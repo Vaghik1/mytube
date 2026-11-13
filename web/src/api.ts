@@ -19,6 +19,8 @@ export type Video = {
   description: string;
   categoryId?: string;
   tags?: string[];
+  /** Why this was suggested (e.g. ChatGPT's reason). */
+  note?: string;
 };
 
 export type Channel = {
@@ -395,6 +397,17 @@ async function channelsUploads(ids: string[], perChannel: number): Promise<Video
 }
 
 export async function getForYou(): Promise<Video[]> {
+  const [feed, picks] = await Promise.all([
+    getLearnedFeed(),
+    import('./agent').then((m) => m.getPickVideos()).catch(() => [] as Video[]),
+  ]);
+  // ChatGPT's newest picks go first, then the rest of the feed.
+  const top = applyFilters(picks).slice(0, 4);
+  const ids = new Set(top.map((v) => v.id));
+  return [...top, ...feed.filter((v) => !ids.has(v.id))];
+}
+
+async function getLearnedFeed(): Promise<Video[]> {
   const profile = buildProfile();
   if (profile.watches < 3) return getStarterFeed();
 

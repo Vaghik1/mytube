@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Route, Routes, useLocation } from 'react-router-dom';
 import { isSignedIn, onAuthChange } from './auth';
+import { syncProfile } from './agent';
 import { Sidebar } from './components/Sidebar';
 import { Channel } from './pages/Channel';
 import { Home } from './pages/Home';
@@ -15,6 +16,14 @@ export function App() {
   const [signedIn, setSignedIn] = useState(isSignedIn);
   const { pathname } = useLocation();
   useEffect(() => onAuthChange(() => setSignedIn(isSignedIn())), []);
+  // Share the taste profile with the assistant hub now and then.
+  useEffect(() => {
+    if (!signedIn) return;
+    const run = () => syncProfile().catch(() => {});
+    run();
+    const t = window.setInterval(run, 5 * 60_000);
+    return () => window.clearInterval(t);
+  }, [signedIn]);
 
   if (!signedIn) return <Login />;
 

@@ -17,6 +17,7 @@ export function VideoCard({ v, queue, autoFocus }: { v: Video; queue?: Queue; au
         {v.live ? <span className="badge live">LIVE</span> : v.duration ? <span className="badge">{fmtDuration(v.duration)}</span> : null}
       </div>
       <div className="card-title">{v.title}</div>
+      {v.note && <div className="card-note">✨ {v.note}</div>}
       <div className="card-meta">{v.channelTitle}</div>
       <div className="card-meta">
         {v.views ? `${fmtCount(v.views)} views • ` : ''}

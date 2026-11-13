@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getChannelVideos, getRating, getVideo, getVideos, rate, type Video } from '../api';
 import { loadSettings } from '../config';
 import { markLiked, notInterested, recordWatch } from '../history';
+import { dismissPick } from '../agent';
 import { SubscribeButton } from './Channel';
 import type { Queue } from '../components/VideoCard';
 import { VideoGrid } from '../components/VideoGrid';
@@ -342,6 +343,7 @@ export function Watch() {
                   className="btn focusable"
                   onClick={() => {
                     notInterested(video);
+                    dismissPick({ videoId: video.id });
                     if (!goNext()) nav(-1);
                   }}
                 >

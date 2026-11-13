@@ -64,6 +64,7 @@ main::-webkit-scrollbar { display: none; }
 .badge { position: absolute; right: .6rem; bottom: .6rem; background: #000c; padding: .2rem .6rem; border-radius: .5rem; font-size: 1.2rem; font-weight: 500; }
 .badge.live { background: #cc0000; }
 .card-title { margin-top: 1rem; font-size: 1.55rem; font-weight: 500; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card-note { color: #ffd479; font-size: 1.25rem; margin-top: .4rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .card-meta { color: var(--muted); font-size: 1.3rem; margin-top: .3rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .section-title { font-size: 2rem; font-weight: 500; margin: 2rem .4rem 1.2rem; }
