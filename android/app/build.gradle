@@ -1,0 +1,40 @@
+plugins {
+    id 'com.android.application'
+}
+
+def runNumber = Integer.parseInt(System.getenv('GITHUB_RUN_NUMBER') ?: '1')
+
+android {
+    namespace 'am.vaghik.mytube'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'am.vaghik.mytube'
+        minSdk 23
+        targetSdk 35
+        versionCode runNumber
+        versionName "1.${runNumber}"
+    }
+
+    // Same key on every build, so new APKs install over the old one.
+    signingConfigs {
+        release {
+            storeFile file('../keystore/mytube.jks')
+            storePassword 'mytube-tv'
+            keyAlias 'mytube'
+            keyPassword 'mytube-tv'
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

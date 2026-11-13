@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MyTube</string>
+    <!-- The TV app just opens this address. Update the website and the TV gets the change, no reinstall. -->
+    <string name="app_url">https://mytube-vaghik1s-projects.vercel.app/</string>
+</resources>
