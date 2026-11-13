@@ -64,6 +64,12 @@ export async function syncProfile(force = false) {
 
 let picksCache: { t: number; v: AgentPick[] } | null = null;
 
+/** Forget cached picks and live streams (used by tests and after sign-out). */
+export function resetAgentCache() {
+  picksCache = null;
+  liveCache = null;
+}
+
 export async function getPicks(fresh = false): Promise<AgentPick[]> {
   if (!fresh && picksCache && Date.now() - picksCache.t < 5 * 60_000) return picksCache.v;
   const data = await hub('/api/picks');

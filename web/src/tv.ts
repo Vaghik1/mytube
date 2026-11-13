@@ -113,10 +113,12 @@ function move(dir: Dir) {
   if (best) focusEl(best, dir === 'up' || dir === 'down');
 }
 
-export function initTV() {
-  document.addEventListener(
-    'keydown',
-    (e) => {
+let teardown: (() => void) | null = null;
+
+/** Sets up remote-control navigation. Safe to call twice; returns a function that undoes it. */
+export function initTV(): () => void {
+  teardown?.();
+  const onKey = (e: KeyboardEvent) => {
       for (let i = keyHandlers.length - 1; i >= 0; i--) {
         if (keyHandlers[i](e)) {
           e.preventDefault();
@@ -148,26 +150,32 @@ export function initTV() {
         e.preventDefault();
         handleBack();
       }
-    },
-    true,
-  );
+  };
+  document.addEventListener('keydown', onKey, true);
+  (window as any).__tvBack = handleBack;
 
   if (isTouch) {
     document.documentElement.classList.add('touch');
-    (window as any).__tvBack = handleBack;
-    return;
+    teardown = () => {
+      document.removeEventListener('keydown', onKey, true);
+      document.documentElement.classList.remove('touch');
+      teardown = null;
+    };
+    return teardown;
   }
   // Keep something focused at all times so the remote always works.
   const keepFocus = () => {
     const a = document.activeElement;
     if (!a || a === document.body || !document.contains(a)) focusFirst();
   };
-  new MutationObserver(() => requestAnimationFrame(keepFocus)).observe(document.body, {
-    childList: true,
-    subtree: true,
-  });
-
-  (window as any).__tvBack = handleBack;
+  const observer = new MutationObserver(() => requestAnimationFrame(keepFocus));
+  observer.observe(document.body, { childList: true, subtree: true });
+  teardown = () => {
+    document.removeEventListener('keydown', onKey, true);
+    observer.disconnect();
+    teardown = null;
+  };
+  return teardown;
 }
 
 // ── Android app bridge (present only inside the TV app) ─────────

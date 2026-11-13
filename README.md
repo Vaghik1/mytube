@@ -25,3 +25,17 @@ YouTube does not give outside apps your personal recommendations, watch history 
 
 Note: `android/keystore/mytube.jks` signs the APK so updates install over the old version.
 The repo is public, so move it to a GitHub secret if you ever publish this app for others.
+
+## Tests
+`cd web && npm test` runs the unit tests (Vitest, ~2 s). They cover:
+- formatting, the watch-history profile and "For you" ranking
+- YouTube API handling (batching, filters, region fallback, quota errors)
+- sign-in token refresh and sign-out
+- remote-control navigation and Back, phone vs TV detection
+- the assistant hub: MCP tools, picks, live channels, sync, auth, storage
+- layout rules for TV, phone and tablet, computed with CSS precedence
+  (e.g. the phone tab bar must stay full width after a tap)
+- the main screens on TV and phone (player, Home with Live now, sign-in, settings)
+
+Vercel runs them before every deploy (`npm run build`), so a failing test keeps the
+current version live. GitHub Actions runs them on every push too.

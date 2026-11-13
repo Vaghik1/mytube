@@ -177,8 +177,12 @@ main::-webkit-scrollbar { display: none; }
 /* ── Touch screens: no TV focus effects ───────────────────── */
 html.touch .card:focus { transform: none; box-shadow: none; background: none; }
 html.touch .chip:focus, html.touch .btn:focus { outline: none; transform: none; }
-html.touch .sidebar:focus-within { width: var(--sidebar); box-shadow: none; }
-html.touch .sidebar:focus-within .label { opacity: 0; }
+/* Wide touch screens (tablets, landscape phones) keep the icon side menu, without the TV "expand on focus".
+   Must not apply to the phone bottom bar (≤820px), or tapping a tab collapses the bar. */
+@media (min-width: 821px) {
+  html.touch .sidebar:focus-within { width: var(--sidebar); box-shadow: none; background: var(--bg); }
+  html.touch .sidebar:focus-within .label { opacity: 0; }
+}
 html.touch .card:active { opacity: .7; }
 
 /* ── Phone player: normal page with the video on top ──────── */

@@ -100,7 +100,7 @@ export function clearCache(prefix = '') {
     .forEach((k) => localStorage.removeItem(k));
 }
 
-function chunk<T>(arr: T[], n: number): T[][] {
+export function chunk<T>(arr: T[], n: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
   return out;
@@ -120,7 +120,7 @@ async function pool<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>): 
   return out;
 }
 
-function parseDuration(iso?: string): number {
+export function parseDuration(iso?: string): number {
   if (!iso) return 0;
   const m = iso.match(/P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
   if (!m) return 0;
@@ -132,7 +132,7 @@ function bestThumb(t: any): string {
   return t?.high?.url || t?.medium?.url || t?.default?.url || '';
 }
 
-function toVideo(v: any): Video {
+export function toVideo(v: any): Video {
   return {
     id: typeof v.id === 'string' ? v.id : v.id?.videoId,
     title: v.snippet?.title || '',
