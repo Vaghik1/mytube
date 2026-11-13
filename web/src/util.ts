@@ -38,3 +38,14 @@ export function errorText(e: unknown): string {
     return 'YouTube API daily limit reached. It resets at midnight Pacific time (11:00 in Yerevan).';
   return err?.message || 'Something went wrong';
 }
+
+/** "18:00" today, "Tomorrow 18:00", or "Nov 16 18:00" in the TV's local time. */
+export function fmtStart(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  const day = (x: Date) => x.toDateString();
+  if (day(d) === day(now)) return time;
+  if (day(d) === day(new Date(now.getTime() + 86400_000))) return `Tomorrow ${time}`;
+  return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${time}`;
+}

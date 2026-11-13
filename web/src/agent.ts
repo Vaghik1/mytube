@@ -1,12 +1,14 @@
 // Talks to the MyTube assistant hub: shares your taste profile with ChatGPT and fetches its picks.
 import { getAccessToken } from './auth';
-import { getVideos, type Video } from './api';
+import { applyFilters, channelsUploads, getSubscriptionFeed, getVideos, resolveChannelId, type Video } from './api';
 import { loadSettings } from './config';
 import { buildProfile, loadHistory, seenIds } from './history';
 
 export type AgentPick = {
   id: string;
-  type: 'video' | 'search';
+  type: 'video' | 'search' | 'live_channel';
+  channel?: string;
+  until?: string;
   videoId?: string;
   query?: string;
   title?: string;
@@ -81,4 +83,45 @@ export async function getPickVideos(): Promise<Video[]> {
 export async function dismissPick(videoIdOrPickId: { id?: string; videoId?: string }) {
   picksCache = null;
   await hub('/api/picks', { method: 'POST', body: JSON.stringify({ action: 'dismiss', ...videoIdOrPickId }) }).catch(() => {});
+}
+
+// ── Live now ───────────────────────────────────────────────
+
+let liveCache: { t: number; v: { live: Video[]; soon: Video[] } } | null = null;
+
+/**
+ * Live and soon-starting streams to feature at the top of Home:
+ * channels ChatGPT asked to watch, live/upcoming video picks, and your subscriptions.
+ * Only what YouTube itself reports as live is shown as live.
+ */
+export async function getLiveNow(fresh = false): Promise<{ live: Video[]; soon: Video[] }> {
+  if (!fresh && liveCache && Date.now() - liveCache.t < 2 * 60_000) return liveCache.v;
+  const picks = await getPicks(fresh).catch(() => [] as AgentPick[]);
+  const watchPicks = picks.filter((p) => p.type === 'live_channel' && p.channel);
+  const channelIds = (await Promise.all(watchPicks.map((p) => resolveChannelId(p.channel!).catch(() => undefined)))).filter(
+    Boolean,
+  ) as string[];
+  const label = new Map<string, string>();
+  watchPicks.forEach((p, i) => channelIds[i] && label.set(channelIds[i], p.title || p.reason || ''));
+
+  const [fromWatched, fromPicks, fromSubs] = await Promise.all([
+    channelsUploads(channelIds, 6).catch(() => [] as Video[]),
+    getVideos(picks.filter((p) => p.type === 'video' && p.videoId).map((p) => p.videoId!)).catch(() => [] as Video[]),
+    getSubscriptionFeed().catch(() => [] as Video[]),
+  ]);
+  const seen = new Set<string>();
+  const all = [...fromWatched, ...fromPicks, ...fromSubs].filter((v) => !seen.has(v.id) && seen.add(v.id));
+  const soonLimit = Date.now() + 24 * 3600_000;
+  const watchedSet = new Set(channelIds);
+  const rank = (v: Video) => (watchedSet.has(v.channelId) ? 0 : 1);
+  const live = applyFilters(all.filter((v) => v.live))
+    .sort((a, b) => rank(a) - rank(b) || (b.liveViewers || 0) - (a.liveViewers || 0))
+    .map((v) => ({ ...v, note: label.get(v.channelId) || v.note }));
+  const soon = applyFilters(
+    all.filter((v) => v.upcoming && v.scheduledStart && new Date(v.scheduledStart).getTime() < soonLimit),
+  )
+    .sort((a, b) => rank(a) - rank(b) || (a.scheduledStart! < b.scheduledStart! ? -1 : 1))
+    .map((v) => ({ ...v, note: label.get(v.channelId) || v.note }));
+  liveCache = { t: Date.now(), v: { live, soon } };
+  return liveCache.v;
 }

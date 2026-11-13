@@ -63,6 +63,12 @@ main::-webkit-scrollbar { display: none; }
 .thumb-placeholder { display: grid; place-items: center; height: 100%; font-size: 5rem; background: linear-gradient(135deg, #3a0010, #200040); }
 .badge { position: absolute; right: .6rem; bottom: .6rem; background: #000c; padding: .2rem .6rem; border-radius: .5rem; font-size: 1.2rem; font-weight: 500; }
 .badge.live { background: #cc0000; }
+.badge.soon { background: #1f4fbf; }
+.live-row { display: flex; gap: 1.8rem; overflow-x: auto; scrollbar-width: none; padding: .6rem .4rem 1.4rem; }
+.live-row::-webkit-scrollbar { display: none; }
+.live-row .card { flex: 0 0 calc((100% - 3 * 1.8rem) / 4); }
+.live-row.big .card { flex-basis: calc((100% - 1.8rem) / 2); }
+.live-title { color: #ff4d4d; }
 .card-title { margin-top: 1rem; font-size: 1.55rem; font-weight: 500; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .card-note { color: #ffd479; font-size: 1.25rem; margin-top: .4rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .card-meta { color: var(--muted); font-size: 1.3rem; margin-top: .3rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

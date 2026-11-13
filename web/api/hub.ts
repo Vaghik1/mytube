@@ -17,7 +17,11 @@ import { get, put } from '@vercel/blob';
 
 type Pick = {
   id: string;
-  type: 'video' | 'search';
+  type: 'video' | 'search' | 'live_channel';
+  /** live_channel: YouTube channel (@handle, URL or UC… id) whose live streams should be featured. */
+  channel?: string;
+  /** live_channel: stop featuring after this date (ISO). */
+  until?: string;
   videoId?: string;
   query?: string;
   title?: string;
@@ -52,7 +56,7 @@ const PATH = () =>
 let access: 'private' | 'public' = 'private';
 
 async function load(): Promise<State> {
-  if (!process.env.BLOB_READ_WRITE_TOKEN) throw new Error('Storage is not set up: connect a Blob store to the Vercel project');
+  if (!process.env.BLOB_READ_WRITE_TOKEN) throw new Error('MyTube storage is not connected yet (Vercel: Storage → connect a Blob store to the mytube project, then redeploy).');
   for (const a of [access, access === 'private' ? 'public' : 'private'] as const) {
     try {
       const r = await get(PATH(), { access: a, useCache: false });
@@ -166,6 +170,58 @@ async function addPicks(items: PickInput[], source: string) {
   return { added: added.length, skipped, pending: s.picks.filter((p) => p.status === 'new').length };
 }
 
+type LiveInput = { channel?: string; url?: string; label?: string; reason?: string; until?: string };
+
+async function addLiveWatches(items: LiveInput[], source: string) {
+  const s = await load();
+  const added: Pick[] = [];
+  const skipped: string[] = [];
+  for (const it of items.slice(0, 20)) {
+    const channel = (it.channel || it.url || '').trim().slice(0, 200);
+    if (!/(UC[A-Za-z0-9_-]{22}|@[A-Za-z0-9._-]+)/.test(channel)) {
+      skipped.push(`not a YouTube channel (use @handle, channel URL or UC… id): ${channel.slice(0, 60)}`);
+      continue;
+    }
+    const key = channel.toLowerCase();
+    const existing = s.picks.find((p) => p.type === 'live_channel' && p.status === 'new' && p.channel?.toLowerCase() === key);
+    if (existing) {
+      existing.until = it.until || existing.until;
+      existing.reason = it.reason?.slice(0, 300) || existing.reason;
+      existing.title = it.label?.slice(0, 120) || existing.title;
+      skipped.push(`${channel}: already watched, updated`);
+      continue;
+    }
+    const p: Pick = {
+      id: randomUUID().slice(0, 8),
+      type: 'live_channel',
+      channel,
+      title: it.label?.slice(0, 120),
+      reason: it.reason?.slice(0, 300),
+      until: it.until,
+      source: source.slice(0, 40),
+      addedAt: new Date().toISOString(),
+      status: 'new',
+    };
+    s.picks.unshift(p);
+    added.push(p);
+  }
+  await save(s);
+  return {
+    added: added.length,
+    skipped,
+    watching: s.picks.filter((p) => p.type === 'live_channel' && p.status === 'new').map((p) => p.channel),
+  };
+}
+
+async function stopLiveWatches(channels: string[]) {
+  const s = await load();
+  const want = new Set(channels.map((c) => c.trim().toLowerCase()));
+  let n = 0;
+  for (const p of s.picks) if (p.type === 'live_channel' && p.status === 'new' && want.has((p.channel || '').toLowerCase())) (p.status = 'dismissed'), n++;
+  if (n) await save(s);
+  return { stopped: n };
+}
+
 function viewerSummary(s: State) {
   const p = s.profile;
   return {
@@ -178,7 +234,10 @@ function viewerSummary(s: State) {
     favourite_topics: p?.topTopics.slice(0, 25) ?? [],
     recently_watched: p?.recent.slice(0, 25) ?? [],
     dislikes: { blocked_channels: p?.blockedChannels ?? [], blocked_words: p?.blockedKeywords ?? [], hides_shorts: p?.hideShorts ?? false },
-    your_previous_picks: s.picks.slice(0, 30).map((x) => ({
+    live_channels_watched: s.picks
+      .filter((p) => p.type === 'live_channel' && p.status === 'new')
+      .map((p) => ({ channel: p.channel, label: p.title, until: p.until })),
+    your_previous_picks: s.picks.filter((p) => p.type !== 'live_channel').slice(0, 30).map((x) => ({
       video_id: x.videoId,
       search: x.query,
       title: x.title,
@@ -228,6 +287,48 @@ const TOOLS = [
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
+  {
+    name: 'watch_channel_live',
+    title: 'Feature a channel\'s live streams',
+    description:
+      "Tells the TV app to watch YouTube channels for live (and soon-starting) broadcasts and show them at the very top under 'Live now' whenever the viewer opens MyTube. Use for official channels that stream events the viewer cares about (e.g. major chess tournaments). Give the channel as @handle, channel URL or UC… id; optionally an end date when the event is over. The app only marks something LIVE when YouTube reports it as live, so replays are never shown as live.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        items: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 10,
+          items: {
+            type: 'object',
+            properties: {
+              channel: { type: 'string', description: 'YouTube channel: @handle, channel URL or UC… id' },
+              label: { type: 'string', description: 'Short label, e.g. "Total Chess World Championship Tour"' },
+              reason: { type: 'string', description: 'Why the viewer would care' },
+              until: { type: 'string', description: 'ISO date after which to stop featuring (optional)' },
+            },
+            required: ['channel'],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ['items'],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: 'stop_watching_channel_live',
+    title: 'Stop featuring a channel\'s live streams',
+    description: 'Removes channels previously added with watch_channel_live.',
+    inputSchema: {
+      type: 'object',
+      properties: { channels: { type: 'array', items: { type: 'string' }, minItems: 1 } },
+      required: ['channels'],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
 ];
 
 async function mcp(req: Request, url: URL) {
@@ -251,7 +352,7 @@ async function mcp(req: Request, url: URL) {
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: 'mytube', title: 'MyTube TV', version: '1.0.0' },
           instructions:
-            "MyTube is the viewer's personal YouTube app on their TV. Call get_viewer_profile to learn their taste, search the web for recent YouTube videos they would enjoy, then call recommend_videos with 1-5 strong picks and a short reason each. Quality over quantity; never resend old picks.",
+            "MyTube is the viewer's personal YouTube app on their TV. Call get_viewer_profile to learn their taste, search the web for recent YouTube videos they would enjoy, then call recommend_videos with 1-5 strong picks and a short reason each. For live events the viewer cares about (major tournaments, premieres), call watch_channel_live with the official broadcaster's YouTube channel so the TV puts the stream at the top while it is live. Quality over quantity; never resend old picks.",
         });
       } else if (method === 'ping') reply({});
       else if (method === 'tools/list') reply({ tools: TOOLS });
@@ -261,6 +362,8 @@ async function mcp(req: Request, url: URL) {
         let result: unknown;
         if (name === 'get_viewer_profile') result = viewerSummary(await load());
         else if (name === 'recommend_videos') result = await addPicks(Array.isArray(args.items) ? args.items : [], 'ChatGPT');
+        else if (name === 'watch_channel_live') result = await addLiveWatches(Array.isArray(args.items) ? args.items : [], 'ChatGPT');
+        else if (name === 'stop_watching_channel_live') result = await stopLiveWatches(Array.isArray(args.channels) ? args.channels : []);
         else {
           fail(-32602, `Unknown tool: ${name}`);
           continue;
@@ -286,7 +389,9 @@ async function picks(req: Request, url: URL) {
   const s = await load();
   if (req.method === 'GET') {
     const all = url.searchParams.get('all') === '1';
-    return json({ picks: s.picks.filter((p) => all || p.status === 'new'), profile: key ? viewerSummary(s) : undefined });
+    const now = new Date().toISOString();
+    const visible = s.picks.filter((p) => all || (p.status === 'new' && !(p.until && p.until < now)));
+    return json({ picks: visible, profile: key ? viewerSummary(s) : undefined });
   }
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405);
   const body = (await req.json().catch(() => ({}))) as { action?: string; id?: string; videoId?: string; items?: PickInput[] } & PickInput;
@@ -302,6 +407,7 @@ async function picks(req: Request, url: URL) {
     return json({ updated: n });
   }
   if (!key) return json({ error: 'adding picks needs the API key' }, 401);
+  if (body.action === 'watch_live') return json(await addLiveWatches((body as any).items || [body], url.searchParams.get('source') || 'API'));
   const items = Array.isArray(body.items) ? body.items : [body];
   return json(await addPicks(items, url.searchParams.get('source') || 'API'));
 }

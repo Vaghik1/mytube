@@ -16,6 +16,11 @@ export type Video = {
   views: number;
   likes: number;
   live: boolean;
+  /** Scheduled live stream that hasn't started yet. */
+  upcoming?: boolean;
+  /** When an upcoming stream is planned to start (ISO). */
+  scheduledStart?: string;
+  liveViewers?: number;
   description: string;
   categoryId?: string;
   tags?: string[];
@@ -139,6 +144,9 @@ function toVideo(v: any): Video {
     views: Number(v.statistics?.viewCount || 0),
     likes: Number(v.statistics?.likeCount || 0),
     live: v.snippet?.liveBroadcastContent === 'live',
+    upcoming: v.snippet?.liveBroadcastContent === 'upcoming' || undefined,
+    scheduledStart: v.liveStreamingDetails?.scheduledStartTime,
+    liveViewers: v.liveStreamingDetails?.concurrentViewers ? Number(v.liveStreamingDetails.concurrentViewers) : undefined,
     description: v.snippet?.description || '',
     categoryId: v.snippet?.categoryId,
     tags: v.snippet?.tags,
@@ -161,7 +169,7 @@ export function applyFilters(videos: Video[]): Video[] {
 
 // ── videos ───────────────────────────────────────────────────
 
-const VPARTS = 'snippet,contentDetails,statistics';
+const VPARTS = 'snippet,contentDetails,statistics,liveStreamingDetails';
 
 export async function getVideos(ids: string[]): Promise<Video[]> {
   const unique = [...new Set(ids.filter(Boolean))];
@@ -384,7 +392,7 @@ export async function getChannelVideos(channelId: string, pageToken?: string): P
 // ── "For you": learned from what you watch ─────────────────────
 
 /** Latest uploads from a list of channels (1 unit per channel + 1 per 50 for details). */
-async function channelsUploads(ids: string[], perChannel: number): Promise<Video[]> {
+export async function channelsUploads(ids: string[], perChannel: number): Promise<Video[]> {
   if (!ids.length) return [];
   const chans = await yt('channels', { part: 'contentDetails', id: ids.slice(0, 50).join(',') });
   const uploads: string[] = (chans.items || [])
@@ -477,4 +485,17 @@ async function getLearnedFeed(): Promise<Video[]> {
     out.push(pick.v);
   }
   return out;
+}
+
+/** Resolves a channel given as UC… id, @handle or YouTube URL. Cached for a week. */
+export async function resolveChannelId(input: string): Promise<string | undefined> {
+  const s = input.trim();
+  const id = s.match(/(UC[A-Za-z0-9_-]{22})/)?.[1];
+  if (id) return id;
+  const handle = s.match(/@([A-Za-z0-9._-]+)/)?.[1] || (/^[A-Za-z0-9._-]+$/.test(s) ? s : undefined);
+  if (!handle) return undefined;
+  return cached(`handle.${handle.toLowerCase()}`, 7 * 86400_000, async () => {
+    const data = await yt('channels', { part: 'id', forHandle: `@${handle}` });
+    return data.items?.[0]?.id as string | undefined;
+  });
 }
