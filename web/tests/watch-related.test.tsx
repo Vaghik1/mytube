@@ -56,3 +56,37 @@ describe('videos under a video (like YouTube)', () => {
     delete (window as any).YT;
   });
 });
+
+describe('resume where you left off', () => {
+  it('a video you did not finish starts from where you stopped', async () => {
+    const { recordWatch } = await import('../src/history');
+    recordWatch(v('half'), 300, 312.4);
+    const made: any[] = [];
+    (window as any).YT = { Player: class { constructor(_e: unknown, o: any) { made.push(o); } destroy() {} } };
+    render(
+      <MemoryRouter initialEntries={['/watch/half']}>
+        <Routes>
+          <Route path="/watch/:id" element={<Watch />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(made).toHaveLength(1));
+    expect(made[0].playerVars.start).toBe(312);
+    delete (window as any).YT;
+  });
+
+  it('a new video starts from the beginning', async () => {
+    const made: any[] = [];
+    (window as any).YT = { Player: class { constructor(_e: unknown, o: any) { made.push(o); } destroy() {} } };
+    render(
+      <MemoryRouter initialEntries={['/watch/fresh']}>
+        <Routes>
+          <Route path="/watch/:id" element={<Watch />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(made).toHaveLength(1));
+    expect(made[0].playerVars.start).toBeUndefined();
+    delete (window as any).YT;
+  });
+});

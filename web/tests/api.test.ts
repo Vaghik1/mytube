@@ -15,6 +15,7 @@ import {
   search,
   toVideo,
   weave,
+  CONTINUE_SLOTS,
   type Video,
 } from '../src/api';
 import { saveRemotePrefs, saveSettings, defaultSettings } from '../src/config';
@@ -345,8 +346,20 @@ describe('For you', () => {
     expect(weave(vs('m1'), vs('g1', 'g2', 'g3')).map((v) => v.id)).toEqual(['m1', 'g1', 'g2', 'g3']);
   });
 
+  it('brings back a video you started but did not finish, a little way down (never at the top)', async () => {
+    recordWatch({ ...ytVideoToVideo('half-1'), duration: 1800 }, 600, 600);
+    mockYouTube(subsRoutes(['a'], { a: ['a-1', 'a-2', 'a-3', 'a-4', 'a-5', 'a-6'] }), { '/api/picks': () => ({ picks: [] }) });
+    const ids = (await getForYou()).map((x) => x.id);
+    expect(ids.indexOf('half-1')).toBe(CONTINUE_SLOTS[0]);
+    expect(ids.filter((id) => id === 'half-1')).toHaveLength(1);
+  });
+
   it('still works when the assistant hub is down', async () => {
     mockYouTube(subsRoutes(['a'], { a: ['a-1'] }), { '/api/picks': () => new Response('{}', { status: 500 }) });
     expect((await getForYou()).map((x) => x.id)).toEqual(['a-1']);
   });
 });
+
+function ytVideoToVideo(id: string): Video {
+  return toVideo(ytVideo({ id, channelId: 'z', title: `${id} chess lesson` }));
+}

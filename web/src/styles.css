@@ -74,6 +74,9 @@ main::-webkit-scrollbar { display: none; }
 .preview.playing { opacity: 1; }
 /* Twice as tall as the card, centred: the video fills the card, YouTube's overlays fall outside it */
 .preview { overflow: hidden; }
+/* Red bar under a thumbnail: how far you got in a video you haven't finished */
+.resume-bar { position: absolute; left: 0; right: 0; bottom: 0; height: .45rem; background: #fff5; z-index: 2; }
+.resume-bar > span { display: block; height: 100%; background: var(--accent); }
 .preview iframe { position: absolute; left: 0; top: -50%; width: 100%; height: 200%; border: 0; pointer-events: none; }
 .badge { z-index: 1; position: absolute; right: .6rem; bottom: .6rem; background: #000c; padding: .2rem .6rem; border-radius: .5rem; font-size: 1.2rem; font-weight: 500; }
 .badge.live { background: #cc0000; }

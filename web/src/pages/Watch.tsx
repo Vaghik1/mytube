@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getChannelVideos, getForYou, getRating, getVideo, getVideos, rate, type Video } from '../api';
 import { loadSettings } from '../config';
 import { loadYTApi } from '../yt';
-import { markLiked, notInterested, recordWatch, seenIds, startedWatching } from '../history';
+import { markLiked, notInterested, recordWatch, resumePoint, seenIds, startedWatching } from '../history';
 import { dismissPick } from '../agent';
 import { SubscribeButton } from './Channel';
 import type { Queue } from '../components/VideoCard';
@@ -102,6 +102,8 @@ export function Watch() {
         height: '100%',
         playerVars: {
           autoplay: 1,
+          // Pick up where you left off (like YouTube).
+          ...(resumePoint(id) ? { start: Math.floor(resumePoint(id)!.pos) } : {}),
           // TV: our own remote-friendly controls. Phone: YouTube's normal tap controls.
           controls: isTouch ? 1 : 0,
           disablekb: isTouch ? 0 : 1,
@@ -148,7 +150,10 @@ export function Watch() {
     setMode('player');
     setRating('none');
     showOsd();
-    if (ready) player.current?.loadVideoById(id);
+    if (ready) {
+      const r = resumePoint(id);
+      player.current?.loadVideoById(r ? { videoId: id, startSeconds: Math.floor(r.pos) } : id);
+    }
     getVideo(id).then(setVideo).catch(() => {});
     getRating(id).then(setRating).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -189,7 +194,7 @@ export function Watch() {
         }
         if (videoRef.current && watched.current - lastSaved.current >= 15) {
           lastSaved.current = watched.current;
-          recordWatch(videoRef.current, watched.current);
+          recordWatch(videoRef.current, watched.current, p.getCurrentTime?.());
         }
       }
     }, 500);
@@ -201,7 +206,12 @@ export function Watch() {
     lastSaved.current = 0;
     started.current = false;
     return () => {
-      if (videoRef.current) recordWatch(videoRef.current, watched.current);
+      if (videoRef.current) {
+        const p = player.current;
+        // Ended: count as finished even if YouTube reports a time just short of the end.
+        const pos = p?.getPlayerState?.() === 0 ? videoRef.current.duration : p?.getCurrentTime?.();
+        recordWatch(videoRef.current, watched.current, pos);
+      }
     };
   }, [id]);
 

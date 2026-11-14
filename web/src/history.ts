@@ -16,6 +16,7 @@ export type Watch = {
   liked?: boolean;
   skip?: boolean; // "Not interested"
   opens?: number; // times you started it (played at least a few seconds)
+  pos?: number; // where you stopped (seconds), to resume and to draw the progress bar
 };
 
 const KEY = 'mytube.history';
@@ -63,10 +64,14 @@ function upsert(v: Video, patch: Partial<Watch>) {
 }
 
 /** Called by the player while you watch. `sec` is the total time watched so far. */
-export function recordWatch(v: Video, sec: number) {
+export function recordWatch(v: Video, sec: number, pos?: number) {
   if (!v?.id || sec < 3) return;
   const prev = loadHistory().find((w) => w.id === v.id);
-  upsert(v, { sec: Math.max(prev?.sec || 0, Math.round(sec)), skip: false });
+  upsert(v, {
+    sec: Math.max(prev?.sec || 0, Math.round(sec)),
+    ...(pos !== undefined && pos >= 0 ? { pos: Math.round(pos), dur: v.duration || prev?.dur || 0 } : {}),
+    skip: false,
+  });
 }
 
 /** Called once each time you start a video (after a few seconds of playing). */
@@ -99,27 +104,53 @@ function weight(w: Watch, now = Date.now()): number {
   return s * decay;
 }
 
-/** You watched a real part of it: half, or 90 seconds of anything longer than 3 minutes. */
-export function watchedEnough(w: Watch) {
-  return w.sec >= Math.min(90, (w.dur || 120) * 0.5);
+// ── Watched / in progress (like YouTube's red bar and Netflix's "Continue watching") ──
+
+/** Played for less than this: just a peek, not "in progress". */
+export const PEEK_SEC = 20;
+/** Unfinished videos come back in For you for this long after you last played them… */
+export const CONTINUE_FOR_MS = 7 * 86400_000;
+/** …and a peek stays out of suggestions for this long. */
+export const PEEK_COOLDOWN_MS = 3 * 86400_000;
+
+/** Finished: reached the last 5% (at least the last 30 seconds), like YouTube's "mostly complete". */
+export function isFinished(w: Watch) {
+  if (!w.dur) return w.sec >= 90;
+  if (w.pos === undefined) return w.sec >= w.dur * 0.9; // older history without a position
+  return w.pos >= w.dur - Math.max(30, w.dur * 0.05);
 }
 
-/** A video you started but left early stays out of suggestions for this long… */
-export const PARTIAL_COOLDOWN_MS = 3 * 86400_000;
-/** …and after this many starts without watching enough, it's not suggested again. */
-export const MAX_PARTIAL_OPENS = 2;
+/** Started for real but not finished, and played within the last week. */
+export function isInProgress(w: Watch, now = Date.now()) {
+  return !w.skip && !isFinished(w) && w.sec >= PEEK_SEC && (w.pos || 0) > 0 && now - w.at < CONTINUE_FOR_MS;
+}
 
 /**
- * Should this video stay out of suggestions?
- *  • "Not interested", or you watched a real part of it: never suggested again.
- *  • Started but left early: hidden for 3 days, then it may come back once.
- *    Started a second time and left early again: never suggested again.
+ * Should this video stay out of the normal suggestions?
+ *  • "Not interested" or finished: never suggested again.
+ *  • In progress: handled separately (comes back as "continue watching", never at the top).
+ *  • Unfinished and not played for a week: you've moved on, not suggested again.
+ *  • A short peek: out for 3 days, then it may come back.
  */
 export function isSeen(w: Watch, now = Date.now()) {
-  if (w.skip || watchedEnough(w)) return true;
-  if ((w.opens || 0) >= MAX_PARTIAL_OPENS) return true;
-  if (w.sec >= 3 && now - w.at < PARTIAL_COOLDOWN_MS) return true;
+  if (w.skip || isFinished(w)) return true;
+  if (w.sec >= PEEK_SEC) return true; // in progress (shown separately) or abandoned after a week
+  if (w.sec >= 3 && now - w.at < PEEK_COOLDOWN_MS) return true;
   return false;
+}
+
+/** Unfinished videos to bring back, most recently played first. */
+export function continueWatching(now = Date.now()): Watch[] {
+  return loadHistory()
+    .filter((w) => isInProgress(w, now))
+    .sort((a, b) => b.at - a.at);
+}
+
+/** Where you stopped in a video you haven't finished (for the red bar and resuming), or null. */
+export function resumePoint(id: string): { pos: number; dur: number } | null {
+  const w = loadHistory().find((x) => x.id === id);
+  if (!w || w.skip || !w.pos || !w.dur || isFinished(w) || w.pos < 10) return null;
+  return { pos: w.pos, dur: w.dur };
 }
 
 export function seenIds(): Set<string> {

@@ -228,3 +228,23 @@ describe('the preview player', () => {
     expect(players[0].destroyed).toBe(true);
   });
 });
+
+describe('red progress bar on thumbnails', () => {
+  const base: Video = {
+    id: 'r1', title: 'Chess', channelId: 'c', channelTitle: 'C', publishedAt: new Date().toISOString(),
+    thumb: '', duration: 1000, views: 1, likes: 0, live: false, description: '',
+  };
+  it('shows how far you got in a video you have not finished, and nothing otherwise', async () => {
+    const { recordWatch } = await import('../src/history');
+    recordWatch(base, 300, 250);
+    const { container } = render(
+      <MemoryRouter>
+        <VideoCard v={base} />
+        <VideoCard v={{ ...base, id: 'fresh' }} />
+      </MemoryRouter>,
+    );
+    const bars = container.querySelectorAll('.resume-bar > span');
+    expect(bars).toHaveLength(1);
+    expect((bars[0] as HTMLElement).style.width).toBe('25%');
+  });
+});

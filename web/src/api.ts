@@ -1,7 +1,7 @@
 // YouTube Data API v3 wrapper. Daily quota is 10,000 units: most calls cost 1, search costs 100.
 import { getAccessToken } from './auth';
 import { effectiveSettings, loadRemotePrefs, loadSettings } from './config';
-import { buildProfile, seedQuery, seenIds, tokens } from './history';
+import { buildProfile, seedQuery, seenIds, tokens, continueWatching } from './history';
 
 const BASE = 'https://www.googleapis.com/youtube/v3/';
 
@@ -563,10 +563,24 @@ export async function getForYou(): Promise<Video[]> {
   const gpt = weave(applyFilters(picks), feed.gpt, 1);
   // Streams that are live right now lead the list; then your videos and ChatGPT's, merged.
   const mine = [...streams.soon.slice(0, 3), ...feed.mine];
+  const merged = weave(mine, gpt);
+  // Videos you started but haven't finished come back for a few days, a little way down, never at the top.
+  const cont = await continueVideos();
+  CONTINUE_SLOTS.forEach((slot, i) => cont[i] && merged.splice(Math.min(slot, merged.length), 0, cont[i]));
   const out: Video[] = [];
   const ids = new Set<string>();
-  for (const v of [...streams.live, ...weave(mine, gpt)]) if (!ids.has(v.id)) ids.add(v.id), out.push(v);
+  for (const v of [...streams.live, ...merged]) if (!ids.has(v.id)) ids.add(v.id), out.push(v);
   return out;
+}
+
+/** Where unfinished videos go in For you (positions after any live streams): 4th, 10th and 18th. */
+export const CONTINUE_SLOTS = [3, 9, 17];
+
+async function continueVideos(): Promise<Video[]> {
+  const list = continueWatching().slice(0, CONTINUE_SLOTS.length);
+  if (!list.length) return [];
+  const vids = await getVideos(list.map((w) => w.id)).catch(() => [] as Video[]);
+  return applyFilters(vids);
 }
 
 async function getLearnedFeed(): Promise<Streams> {

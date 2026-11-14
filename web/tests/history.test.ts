@@ -10,8 +10,9 @@ import {
   recordWatch,
   seedQuery,
   seenIds,
-  startedWatching,
-  PARTIAL_COOLDOWN_MS,
+  continueWatching,
+  resumePoint,
+  PEEK_COOLDOWN_MS,
   tokens,
 } from '../src/history';
 
@@ -69,10 +70,10 @@ describe('recording watches', () => {
 });
 
 describe('seen videos', () => {
-  it('counts a video as seen after half of it (or 90s)', () => {
-    expect(isSeen({ id: 'a', ch: 'c', cht: '', title: '', sec: 40, dur: 60, at: 0 })).toBe(true);
-    expect(isSeen({ id: 'a', ch: 'c', cht: '', title: '', sec: 20, dur: 60, at: 0 })).toBe(false);
-    expect(isSeen({ id: 'a', ch: 'c', cht: '', title: '', sec: 95, dur: 3600, at: 0 })).toBe(true);
+  it('a video played for a while is out of the normal suggestions (finished, or handled as "continue watching")', () => {
+    expect(isSeen({ id: 'a', ch: 'c', cht: '', title: '', sec: 58, pos: 58, dur: 60, at: 0 })).toBe(true);
+    expect(isSeen({ id: 'a', ch: 'c', cht: '', title: '', sec: 95, pos: 95, dur: 3600, at: Date.now() })).toBe(true);
+    expect(isSeen({ id: 'a', ch: 'c', cht: '', title: '', sec: 10, pos: 10, dur: 3600, at: 0 })).toBe(false); // old peek
   });
 
   it('treats "not interested" as seen', () => {
@@ -160,42 +161,59 @@ describe('top topics are real topics, not hype words', () => {
   });
 });
 
-describe("don't suggest videos you've already watched", () => {
+describe("finished vs unfinished videos (like YouTube's red bar)", () => {
   afterEach(() => vi.useRealTimers());
+  const long = () => vid('long', 'c', 'Chess lecture', 1800);
 
-  it('watched a real part of it (half, or 90s of a long video): never suggested again', () => {
+  it('finished (reached the end): never suggested again, no red bar, no resume', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
-    const long = vid('long', 'c', 'Chess lecture', 1800);
-    startedWatching(long);
-    recordWatch(long, 95);
+    recordWatch(long(), 1790, 1790);
+    expect(seenIds().has('long')).toBe(true);
+    expect(continueWatching()).toHaveLength(0);
+    expect(resumePoint('long')).toBeNull();
     vi.setSystemTime(Date.now() + 365 * 86400_000);
     expect(seenIds().has('long')).toBe(true);
   });
 
-  it('left early: hidden for 3 days, then it may come back once', () => {
+  it('unfinished: comes back as "continue watching" for a week, with a red bar and resume point', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
-    const v = vid('peek', 'c', 'Chess lecture', 1800);
-    startedWatching(v);
-    recordWatch(v, 20);
-    expect(seenIds().has('peek')).toBe(true);
-    vi.setSystemTime(Date.now() + PARTIAL_COOLDOWN_MS + 1000);
-    expect(seenIds().has('peek')).toBe(false);
+    recordWatch(long(), 600, 600);
+    expect(seenIds().has('long')).toBe(true); // not in the normal list…
+    expect(continueWatching().map((w) => w.id)).toEqual(['long']); // …but brought back on its own
+    expect(resumePoint('long')).toEqual({ pos: 600, dur: 1800 });
+    vi.setSystemTime(Date.now() + 6 * 86400_000);
+    expect(continueWatching().map((w) => w.id)).toEqual(['long']);
+    vi.setSystemTime(Date.now() + 2 * 86400_000); // over a week without playing it: you've moved on
+    expect(continueWatching()).toHaveLength(0);
+    expect(seenIds().has('long')).toBe(true);
   });
 
-  it('left early a second time: not suggested again', () => {
+  it('most recently played unfinished videos come first', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
-    const v = vid('twice', 'c', 'Chess lecture', 1800);
-    startedWatching(v);
-    recordWatch(v, 20);
-    vi.setSystemTime(Date.now() + PARTIAL_COOLDOWN_MS + 1000);
-    startedWatching(v);
-    recordWatch(v, 15);
-    vi.setSystemTime(Date.now() + 30 * 86400_000);
-    expect(seenIds().has('twice')).toBe(true);
+    recordWatch(vid('older', 'c', 'A', 1800), 300, 300);
+    vi.setSystemTime(Date.now() + 60_000);
+    recordWatch(vid('newer', 'c', 'B', 1800), 300, 300);
+    expect(continueWatching().map((w) => w.id)).toEqual(['newer', 'older']);
   });
 
-  it('opened but not really played (under 3 seconds): still suggested', () => {
-    recordWatch(vid('blip', 'c', 'Chess lecture', 1800), 2);
-    expect(seenIds().has('blip')).toBe(false);
+  it('a short peek is not "in progress": out for 3 days, then it may be suggested again', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    recordWatch(long(), 10, 10);
+    expect(continueWatching()).toHaveLength(0);
+    expect(seenIds().has('long')).toBe(true);
+    vi.setSystemTime(Date.now() + PEEK_COOLDOWN_MS + 1000);
+    expect(seenIds().has('long')).toBe(false);
+  });
+
+  it('opened by accident (under 3 seconds): still suggested', () => {
+    recordWatch(long(), 2, 2);
+    expect(seenIds().has('long')).toBe(false);
+  });
+
+  it('"Not interested" wins over unfinished', () => {
+    recordWatch(long(), 600, 600);
+    notInterested(long());
+    expect(continueWatching()).toHaveLength(0);
+    expect(resumePoint('long')).toBeNull();
   });
 });
