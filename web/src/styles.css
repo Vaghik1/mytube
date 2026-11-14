@@ -1,5 +1,12 @@
 /* Sized for TV: 1rem scales with screen width (≈10px on a 960-wide TV viewport, 20px at 1920). */
 :root {
+  /* Space taken by the notch / status bar / navigation bar.
+     The Android app injects exact --safe-area-inset-* values (older WebViews report wrong env() values);
+     browsers and newer WebViews fall back to env(). TVs: all 0. */
+  --safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --safe-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+  --safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  --safe-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
   --bg: #0f0f0f;
   --panel: #1c1c1c;
   --panel-2: #272727;
@@ -22,15 +29,16 @@ img { display: block; }
 .layout { display: flex; height: 100%; }
 main { flex: 1; height: 100%; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
 main::-webkit-scrollbar { display: none; }
-.page { padding: 2.4rem 3.2rem 6rem 2.4rem; }
+.page { padding: calc(2.4rem + var(--safe-top)) calc(3.2rem + var(--safe-right)) calc(6rem + var(--safe-bottom)) 2.4rem; }
 
 /* Sidebar: icons only, expands while focused */
 .sidebar {
-  width: var(--sidebar); flex-shrink: 0; height: 100%; padding: 2.4rem 1rem;
+  width: calc(var(--sidebar) + var(--safe-left)); flex-shrink: 0; height: 100%;
+  padding: calc(2.4rem + var(--safe-top)) 1rem calc(1rem + var(--safe-bottom)) calc(1rem + var(--safe-left));
   display: flex; flex-direction: column; gap: .6rem; background: var(--bg);
   transition: width .15s ease; z-index: 5; overflow: hidden;
 }
-.sidebar:focus-within { width: 24rem; background: #181818; box-shadow: 1rem 0 3rem #000a; }
+.sidebar:focus-within { width: calc(24rem + var(--safe-left)); background: #181818; box-shadow: 1rem 0 3rem #000a; }
 .sidebar .label { white-space: nowrap; opacity: 0; transition: opacity .15s; }
 .sidebar:focus-within .label { opacity: 1; }
 .logo { display: flex; align-items: center; gap: 1rem; font-weight: 700; font-size: 2rem; padding: 0 1.2rem 2rem; }
@@ -102,7 +110,7 @@ main::-webkit-scrollbar { display: none; }
 /* Watch */
 .watch { position: fixed; inset: 0; background: #000; }
 .player, .player iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; pointer-events: none; }
-.osd { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: space-between; background: linear-gradient(#000c, transparent 25%, transparent 65%, #000d); padding: 3rem 4rem; }
+.osd { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: space-between; background: linear-gradient(#000c, transparent 25%, transparent 65%, #000d); padding: calc(3rem + var(--safe-top)) calc(4rem + var(--safe-right)) calc(3rem + var(--safe-bottom)) calc(4rem + var(--safe-left)); }
 .osd-title { font-size: 2.6rem; font-weight: 500; }
 .osd-bottom { display: flex; align-items: center; gap: 2rem; }
 .osd-state { font-size: 2.4rem; width: 3rem; }
@@ -129,13 +137,13 @@ main::-webkit-scrollbar { display: none; }
   body { font-size: 1.5rem; }
   .layout { flex-direction: column; }
   main { width: 100%; }
-  .page { padding: 1.4rem 1.2rem calc(8rem + env(safe-area-inset-bottom)); }
+  .page { padding: calc(1.4rem + var(--safe-top)) calc(1.2rem + var(--safe-right)) calc(8rem + var(--safe-bottom)) calc(1.2rem + var(--safe-left)); }
 
   /* Side menu becomes a bottom tab bar */
   .sidebar, .sidebar:focus-within {
     position: fixed; left: 0; right: 0; bottom: 0; top: auto; width: auto; height: auto;
     flex-direction: row; justify-content: space-around; gap: 0;
-    padding: .4rem .2rem calc(.4rem + env(safe-area-inset-bottom));
+    padding: .4rem calc(.2rem + var(--safe-right)) calc(.4rem + var(--safe-bottom)) calc(.2rem + var(--safe-left));
     background: #0f0f0f; border-top: 1px solid #262626; box-shadow: none; z-index: 30;
   }
   .sidebar .logo, .sidebar .me { display: none; }
@@ -155,7 +163,7 @@ main::-webkit-scrollbar { display: none; }
   .channel-head img { width: 6.4rem; height: 6.4rem; }
   .channel-head h1 { font-size: 2.2rem; }
   .banner { height: 9rem; }
-  .login { padding: 2rem; font-size: 1.6rem; }
+  .login { padding: calc(2rem + var(--safe-top)) calc(2rem + var(--safe-right)) calc(2rem + var(--safe-bottom)) calc(2rem + var(--safe-left)); font-size: 1.6rem; }
   .login-code { font-size: 3.6rem; letter-spacing: .3rem; padding: 1.2rem 2rem; }
   .login-url { font-size: 2.2rem; }
   .logo.big { font-size: 3rem; }
@@ -170,19 +178,19 @@ html.touch .chip:focus, html.touch .btn:focus { outline: none; transform: none; 
 /* Wide touch screens (tablets, landscape phones) keep the icon side menu, without the TV "expand on focus".
    Must not apply to the phone bottom bar (≤820px), or tapping a tab collapses the bar. */
 @media (min-width: 821px) {
-  html.touch .sidebar:focus-within { width: var(--sidebar); box-shadow: none; background: var(--bg); }
+  html.touch .sidebar:focus-within { width: calc(var(--sidebar) + var(--safe-left)); box-shadow: none; background: var(--bg); }
   html.touch .sidebar:focus-within .label { opacity: 0; }
 }
 html.touch .card:active { opacity: .7; }
 
 /* ── Phone player: normal page with the video on top ──────── */
 .watch.web { position: fixed; inset: 0; overflow-y: auto; background: var(--bg); -webkit-overflow-scrolling: touch; }
-.watch.web .watch-top { position: sticky; top: 0; z-index: 5; padding: .8rem 1.2rem; background: var(--bg); }
-.watch.web .player { position: relative; inset: auto; width: 100%; aspect-ratio: 16 / 9; max-height: 75vh; background: #000; pointer-events: auto; }
+.watch.web .watch-top { position: sticky; top: 0; z-index: 5; padding: calc(.8rem + var(--safe-top)) calc(1.2rem + var(--safe-right)) .8rem calc(1.2rem + var(--safe-left)); background: var(--bg); }
+.watch.web .player { position: relative; inset: auto; width: auto; margin: 0 var(--safe-right) 0 var(--safe-left); aspect-ratio: 16 / 9; max-height: 75vh; background: #000; pointer-events: auto; }
 .watch.web .player iframe { pointer-events: auto; }
 .watch.web .player-error { position: relative; inset: auto; padding: 2rem 1.4rem; font-size: 1.5rem; background: var(--panel); }
 .watch.web .details { position: static; background: none; overflow: visible; }
-.watch.web .details-inner { padding: 1.4rem 1.2rem 4rem; }
+.watch.web .details-inner { padding: 1.4rem calc(1.2rem + var(--safe-right)) calc(4rem + var(--safe-bottom)) calc(1.2rem + var(--safe-left)); }
 .watch.web .details h1 { font-size: 2rem; }
 .watch.web .description { max-height: none; font-size: 1.35rem; }
 @media (min-width: 821px) {
@@ -200,7 +208,7 @@ html.touch .card:active { opacity: .7; }
 .sub-text { display: flex; flex-direction: column; min-width: 0; }
 .sub-title { font-size: 1.6rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .check { font-size: 2.2rem; width: 2.4rem; }
-.manage-bar { position: sticky; top: 0; z-index: 4; background: var(--bg); padding: .8rem 0; margin: 0 0 1rem; }
+.manage-bar { position: sticky; top: 0; z-index: 4; background: var(--bg); padding: calc(.8rem + var(--safe-top)) 0 .8rem; margin: 0 0 1rem; }
 .btn.danger { background: #cc0000; color: #fff; }
 .btn:disabled { opacity: .45; }
 html.touch .sub-main:focus { background: none; box-shadow: none; }
@@ -208,7 +216,7 @@ html.touch .sub-main:focus { background: none; box-shadow: none; }
   .sub-list { grid-template-columns: 1fr; gap: .4rem; }
   .sub-main img { width: 4.4rem; height: 4.4rem; }
   .row.between { flex-wrap: wrap; gap: .6rem; }
-  .manage-bar { top: 0; flex-wrap: wrap; }
+  .manage-bar { flex-wrap: wrap; }
 }
 @media (min-width: 560px) and (max-width: 820px) {
   .sub-list { grid-template-columns: repeat(2, 1fr); }

@@ -119,12 +119,12 @@ describe('TV (default)', () => {
   });
 
   it('expands the side menu when it has focus', () => {
-    expect(computed(['.sidebar:focus-within'], 'width', 1920)).toBe('24rem');
-    expect(computed(['.sidebar'], 'width', 1920)).toBe('var(--sidebar)');
+    expect(computed(['.sidebar:focus-within'], 'width', 1920)).toBe('calc(24rem + var(--safe-left))');
+    expect(computed(['.sidebar'], 'width', 1920)).toBe('calc(var(--sidebar) + var(--safe-left))');
   });
 
   it('tablets and landscape phones keep a slim side menu even when tapped', () => {
-    expect(computed(SIDEBAR, 'width', 1024)).toBe('var(--sidebar)');
+    expect(computed(SIDEBAR, 'width', 1024)).toBe('calc(var(--sidebar) + var(--safe-left))');
   });
 });
 
@@ -137,5 +137,54 @@ describe('phone player', () => {
     const r = rules((s) => s === '.watch.web .player')[0].rule;
     expect(decl(r, 'aspect-ratio')?.value.replace(/\s/g, '')).toBe('16/9');
     expect(decl(r, 'position')?.value).toBe('relative');
+  });
+});
+
+describe('notch / status bar / navigation bar (safe areas)', () => {
+  const html = readFileSync(resolve(__dirname, '../index.html'), 'utf8');
+
+  it('lets the page draw edge to edge (needed for safe-area values)', () => {
+    expect(html).toMatch(/viewport-fit=cover/);
+  });
+
+  it("uses the app's exact values first, then env(), then 0", () => {
+    const rootRule = rules((s) => s === ':root')[0].rule;
+    for (const side of ['top', 'right', 'bottom', 'left'])
+      expect(decl(rootRule, `--safe-${side}`)?.value).toBe(`var(--safe-area-inset-${side}, env(safe-area-inset-${side}, 0px))`);
+  });
+
+  it('uses env() only through those variables', () => {
+    root.walkDecls((d) => {
+      if (d.value.includes('env(safe-area')) expect((d.parent as Rule).selector).toBe(':root');
+    });
+  });
+
+  it('phone pages start below the status bar / notch and stay clear on the sides', () => {
+    const v = computed(['.page'], 'padding', 390)!;
+    expect(v).toContain('var(--safe-top)');
+    expect(v).toContain('var(--safe-left)');
+    expect(v).toContain('var(--safe-right)');
+    expect(v).toContain('var(--safe-bottom)');
+  });
+
+  it('the tab bar sits above the gesture / navigation bar', () => {
+    for (const sel of [['.sidebar'], ['.sidebar:focus-within']]) expect(computed(sel, 'padding', 390)).toContain('var(--safe-bottom)');
+  });
+
+  it('the phone player Back button and the sign-in screen avoid the notch', () => {
+    expect(computed(['.watch.web .watch-top'], 'padding', 390)).toContain('var(--safe-top)');
+    expect(computed(['.login'], 'padding', 390)).toContain('var(--safe-top)');
+  });
+
+  it('landscape phones keep the side menu clear of a side notch', () => {
+    expect(computed(SIDEBAR, 'padding', 900)).toContain('var(--safe-left)');
+    expect(computed(['.page'], 'padding', 900)).toContain('var(--safe-right)');
+  });
+
+  it('every fixed bar at the bottom pads for the navigation bar', () => {
+    root.walkRules((r) => {
+      if (decl(r, 'position')?.value === 'fixed' && decl(r, 'bottom')?.value === '0')
+        expect(decl(r, 'padding')?.value, r.selector).toContain('var(--safe-bottom)');
+    });
   });
 });

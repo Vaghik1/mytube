@@ -7,10 +7,16 @@ import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
+import android.graphics.Insets;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
+import android.view.DisplayCutout;
 import android.view.WindowManager;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
@@ -32,6 +38,9 @@ public class MainActivity extends Activity {
     private View customView;
     private WebChromeClient.CustomViewCallback customViewCallback;
     private String appUrl;
+    private boolean tv;
+    /** Safe-area insets in CSS pixels: top, right, bottom, left. */
+    private final float[] safe = new float[4];
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -46,6 +55,9 @@ public class MainActivity extends Activity {
         root.addView(web, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(root);
+
+        tv = isTvDevice();
+        if (!tv) setupEdgeToEdge();
 
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
@@ -73,6 +85,11 @@ public class MainActivity extends Activity {
             }
 
             @Override
+            public void onPageFinished(WebView view, String url) {
+                pushSafeArea();
+            }
+
+            @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 if (request.isForMainFrame()) {
                     String html = "<html><body style='background:#0f0f0f;color:#eee;font-family:sans-serif;"
@@ -96,6 +113,7 @@ public class MainActivity extends Activity {
                 customViewCallback = callback;
                 root.addView(view, new FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+                setSystemBarsHidden(true);
             }
 
             @Override
@@ -112,8 +130,124 @@ public class MainActivity extends Activity {
         if (customView == null) return;
         root.removeView(customView);
         customView = null;
+        setSystemBarsHidden(false);
         if (customViewCallback != null) customViewCallback.onCustomViewHidden();
         customViewCallback = null;
+    }
+
+    private boolean isTvDevice() {
+        UiModeManager um = (UiModeManager) getSystemService(UI_MODE_SERVICE);
+        return um != null && um.getCurrentModeType() == Configuration.UI_MODE_TYPE_TELEVISION;
+    }
+
+    /**
+     * Phones: draw behind transparent status/navigation bars (Android 15 does this anyway)
+     * and tell the page exactly how much space the bars and the notch take,
+     * as CSS variables --safe-area-inset-top/right/bottom/left.
+     */
+    @SuppressWarnings("deprecation")
+    private void setupEdgeToEdge() {
+        Window w = getWindow();
+        w.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        if (Build.VERSION.SDK_INT >= 28) {
+            WindowManager.LayoutParams lp = w.getAttributes();
+            lp.layoutInDisplayCutoutMode = Build.VERSION.SDK_INT >= 30
+                    ? WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                    : WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            w.setAttributes(lp);
+        }
+        if (Build.VERSION.SDK_INT >= 30) {
+            w.setDecorFitsSystemWindows(false);
+            WindowInsetsController c = w.getInsetsController();
+            if (c != null) {
+                // Dark app: light status/navigation icons.
+                c.setSystemBarsAppearance(0, WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                        | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS);
+            }
+        } else {
+            root.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+        }
+        if (Build.VERSION.SDK_INT < 35) {
+            w.setStatusBarColor(Color.TRANSPARENT);
+            w.setNavigationBarColor(Color.TRANSPARENT);
+        }
+        if (Build.VERSION.SDK_INT >= 29) {
+            w.setStatusBarContrastEnforced(false);
+            w.setNavigationBarContrastEnforced(false);
+        }
+        root.setOnApplyWindowInsetsListener((v, insets) -> {
+            readInsets(insets);
+            pushSafeArea();
+            return insets; // not consumed: the WebView still gets them for env(safe-area-inset-*)
+        });
+        root.requestApplyInsets();
+    }
+
+    @SuppressWarnings("deprecation")
+    private void readInsets(WindowInsets insets) {
+        int top, right, bottom, left;
+        if (Build.VERSION.SDK_INT >= 30) {
+            Insets i = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+            top = i.top;
+            right = i.right;
+            bottom = i.bottom;
+            left = i.left;
+        } else {
+            top = insets.getSystemWindowInsetTop();
+            right = insets.getSystemWindowInsetRight();
+            bottom = insets.getSystemWindowInsetBottom();
+            left = insets.getSystemWindowInsetLeft();
+            if (Build.VERSION.SDK_INT >= 28) {
+                DisplayCutout cut = insets.getDisplayCutout();
+                if (cut != null) {
+                    top = Math.max(top, cut.getSafeInsetTop());
+                    right = Math.max(right, cut.getSafeInsetRight());
+                    bottom = Math.max(bottom, cut.getSafeInsetBottom());
+                    left = Math.max(left, cut.getSafeInsetLeft());
+                }
+            }
+        }
+        float d = getResources().getDisplayMetrics().density;
+        safe[0] = top / d;
+        safe[1] = right / d;
+        safe[2] = bottom / d;
+        safe[3] = left / d;
+    }
+
+    private void pushSafeArea() {
+        if (tv || web == null) return;
+        String js = "(function(s){"
+                + "s.setProperty('--safe-area-inset-top','" + safe[0] + "px');"
+                + "s.setProperty('--safe-area-inset-right','" + safe[1] + "px');"
+                + "s.setProperty('--safe-area-inset-bottom','" + safe[2] + "px');"
+                + "s.setProperty('--safe-area-inset-left','" + safe[3] + "px');"
+                + "})(document.documentElement.style);";
+        web.evaluateJavascript(js, null);
+    }
+
+    /** Full-screen video on phones hides the status and navigation bars (swipe to show). */
+    @SuppressWarnings("deprecation")
+    private void setSystemBarsHidden(boolean hidden) {
+        if (tv) return;
+        if (Build.VERSION.SDK_INT >= 30) {
+            WindowInsetsController c = getWindow().getInsetsController();
+            if (c == null) return;
+            if (hidden) {
+                c.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                c.hide(WindowInsets.Type.systemBars());
+            } else {
+                c.show(WindowInsets.Type.systemBars());
+            }
+        } else {
+            int base = View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION;
+            root.setSystemUiVisibility(hidden
+                    ? base | View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                            | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    : base);
+        }
     }
 
     @Override
@@ -182,8 +316,7 @@ public class MainActivity extends Activity {
         /** True on Google TV / Android TV, false on phones and tablets. */
         @JavascriptInterface
         public boolean isTv() {
-            UiModeManager um = (UiModeManager) getSystemService(UI_MODE_SERVICE);
-            return um != null && um.getCurrentModeType() == Configuration.UI_MODE_TYPE_TELEVISION;
+            return tv;
         }
 
         @JavascriptInterface
