@@ -163,16 +163,35 @@ describe('Back button', () => {
     off();
   });
 
-  it('goes back in history when not on Home', async () => {
+  it('goes back through MyTube pages when not on Home', async () => {
     const tv = await loadTv('tv');
-    history.pushState(null, '', '/settings');
+    history.pushState({ idx: 1 }, '', '/settings');
     const back = vi.spyOn(history, 'back').mockImplementation(() => {});
     expect(tv.handleBack()).toBe(true);
     expect(back).toHaveBeenCalled();
+    back.mockRestore();
     history.replaceState(null, '', '/');
   });
 
-  it('returns false on Home so the app can exit', async () => {
+  it("never goes back into history from outside the app (that showed a black screen): goes Home instead", async () => {
+    const tv = await loadTv('tv');
+    history.replaceState(null, '', '/watch/abc'); // opened straight on a video, older entries aren't ours
+    const back = vi.spyOn(history, 'back').mockImplementation(() => {});
+    expect(tv.handleBack()).toBe(true);
+    expect(back).not.toHaveBeenCalled();
+    expect(location.pathname).toBe('/');
+    back.mockRestore();
+  });
+
+  it('on Home, closes the app itself', async () => {
+    const tv = await loadTv('tv-app');
+    history.replaceState(null, '', '/');
+    expect(tv.handleBack()).toBe(true);
+    expect((window as any).MyTubeAndroid.exitApp).toHaveBeenCalled();
+    delete (window as any).MyTubeAndroid;
+  });
+
+  it('in a browser (no app), Home returns false', async () => {
     const tv = await loadTv('tv');
     history.replaceState(null, '', '/');
     expect(tv.handleBack()).toBe(false);

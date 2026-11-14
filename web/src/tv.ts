@@ -26,13 +26,20 @@ export function pushBackHandler(h: () => boolean) {
 /** Called by the Android app on the remote's Back button. Returns false to exit the app. */
 export function handleBack(): boolean {
   for (let i = backHandlers.length - 1; i >= 0; i--) if (backHandlers[i]()) return true;
-  if (location.pathname !== '/' && history.length > 1) {
-    history.back();
+  if (location.pathname !== '/') {
+    // Go back only through MyTube's own pages (the router numbers them). The WebView's history
+    // can also hold older entries from outside the app, and going back into those showed a black screen.
+    if (((history.state as { idx?: number } | null)?.idx ?? 0) > 0) history.back();
+    else {
+      history.replaceState(null, '', '/');
+      dispatchEvent(new PopStateEvent('popstate'));
+    }
     return true;
   }
-  if (location.pathname !== '/') {
-    history.replaceState(null, '', '/');
-    dispatchEvent(new PopStateEvent('popstate'));
+  // Home: leave the app. Close it ourselves rather than letting the WebView "go back" further.
+  const bridge = (window as any).MyTubeAndroid as Bridge | undefined;
+  if (bridge?.exitApp) {
+    bridge.exitApp();
     return true;
   }
   return false;
