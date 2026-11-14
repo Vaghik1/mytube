@@ -139,3 +139,21 @@ describe('tokens', () => {
     expect(tokens('a an 42 go chess')).toEqual(['chess']);
   });
 });
+
+describe('top topics are real topics, not hype words', () => {
+  it('ignores filler and opinion words in titles', () => {
+    expect(tokens('This is much worse than I thought, really insane')).toEqual([]);
+    expect(tokens('React vs Svelte for web development')).toEqual(['react', 'svelte', 'web', 'development']);
+  });
+
+  it("the creator's tags outweigh words from the title", () => {
+    recordWatch(vid('a', 't3', 'Next.js caching is broken', 900, ['web development', 'typescript', 'react']), 900);
+    recordWatch(vid('b', 't3', 'Bun just shipped something wild', 900, ['javascript', 'typescript']), 900);
+    const top = buildProfile().terms.slice(0, 4).map((t) => t.term);
+    expect(top[0]).toBe('typescript');
+    expect(top).toEqual(expect.arrayContaining(['web', 'development', 'react']));
+    const terms = buildProfile().terms.map((t) => t.term);
+    expect(terms).not.toContain('just');
+    expect(terms).not.toContain('something');
+  });
+});

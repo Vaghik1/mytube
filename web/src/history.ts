@@ -101,10 +101,24 @@ export function seenIds(): Set<string> {
 
 // ── topics ─────────────────────────────────────────────────
 
+// Words that say nothing about what a video is about (filler, opinions, clickbait).
 const STOP = new Set(
   (
     'the and for with you your this that from are was were have has had not but all can will just how what why who ' +
     'new video videos official full part episode live 2024 2025 2026 2027 vs feat ft hd 4k shorts short trailer ' +
+    'about above after again against also always any anyone anything around because been before being better ' +
+    'between big biggest both came come comes could did does doing done dont don down during each even ever every ' +
+    'everyone everything few finally first found get gets getting give goes going gonna good got great had happened ' +
+    'happens here hers him his into its it\'s itself keep know last least less let lets like literally little long look ' +
+    'looks lot lots made make makes making many may maybe might more most much must need needs never next nobody ' +
+    'nothing now off once one only other others our ours out over own people please pretty quite rather real really ' +
+    'right said same say says see seen should show shows since some someone something still such sure take takes ' +
+    'tell than thank thanks their them then there these they thing things think thinks thought those though three ' +
+    'through time times today told too took top totally try trying two under until upon use used using very want ' +
+    'wants way ways well went what\'s when where which while whole will wish without wont worse worst would wow yes ' +
+    'yet you\'re best bad better huge insane crazy actually absolutely completely changed change changes ever ' +
+    'here\'s nobody\'s reason reasons why\'s day days week weeks year years ago again guide watch watching stop ' +
+    'start started starting world life lol omg ' +
     'и в на с по для это как что не из за от до или же уже все его она они мы вы ты'
   ).split(' '),
 );
@@ -115,8 +129,14 @@ export function tokens(text: string): string[] {
   );
 }
 
-function videoTerms(w: { title: string; tags?: string[] }): string[] {
-  return [...new Set([...tokens(w.title), ...(w.tags || []).flatMap(tokens)])];
+/** Title words count much less than the creator's own tags: titles are full of hype words. */
+export const TITLE_WEIGHT = 0.35;
+
+function videoTerms(w: { title: string; tags?: string[] }): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const t of tokens(w.title)) out.set(t, TITLE_WEIGHT);
+  for (const t of (w.tags || []).flatMap(tokens)) out.set(t, 1);
+  return out;
 }
 
 export type Profile = {
@@ -140,7 +160,7 @@ export function buildProfile(): Profile {
     c.score += s;
     ch.set(w.ch, c);
     if (w.cat) cats.set(w.cat, (cats.get(w.cat) || 0) + s);
-    for (const t of videoTerms(w)) terms.set(t, (terms.get(t) || 0) + s);
+    for (const [t, k] of videoTerms(w)) terms.set(t, (terms.get(t) || 0) + s * k);
   }
   const seeds = list
     .filter((w) => !w.skip && (w.liked || (w.dur > 0 && w.sec / w.dur >= 0.6) || w.sec >= 600))
@@ -163,6 +183,6 @@ export function buildProfile(): Profile {
 /** The best search phrase for "more like this video": its words you care about most. */
 export function seedQuery(w: Watch, profile: Profile): string {
   const score = new Map(profile.terms.map((t) => [t.term, t.score]));
-  const own = videoTerms(w).sort((a, b) => (score.get(b) || 0) - (score.get(a) || 0));
+  const own = [...videoTerms(w).keys()].sort((a, b) => (score.get(b) || 0) - (score.get(a) || 0));
   return own.slice(0, 3).join(' ');
 }
