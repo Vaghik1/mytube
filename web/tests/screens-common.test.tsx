@@ -159,7 +159,7 @@ describe('Settings', () => {
     inRouter(<Settings />);
     expect(screen.getByText(/3 videos watched/)).toBeTruthy();
     expect(screen.getByText(/Top channels: Chess Channel/)).toBeTruthy();
-    fireEvent.click(screen.getByText('Clear watch history'));
+    fireEvent.click(screen.getByText('Clear watch history (TV and phone)'));
     expect(screen.getByText(/0 videos watched/)).toBeTruthy();
   });
 });

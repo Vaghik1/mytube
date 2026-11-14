@@ -5,6 +5,7 @@ import { loadRemotePrefs, defaultSettings, loadSettings, saveSettings, type Sett
 import { android } from '../tv';
 import { buildProfile, clearHistory } from '../history';
 import { resetAssistantPrefs } from '../agent';
+import { clearHistoryEverywhere } from '../historySync';
 import { canSelfUpdate, checkForUpdate, installUpdate, installedVersion, useUpdate } from '../update';
 
 function AppUpdates() {
@@ -97,11 +98,12 @@ export function Settings() {
           className="chip focusable"
           onClick={() => {
             clearHistory();
+            clearHistoryEverywhere().catch(() => {});
             clearCache('fy.');
             setProfile(buildProfile());
           }}
         >
-          Clear watch history
+          Clear watch history (TV and phone)
         </button>
       </div>
 

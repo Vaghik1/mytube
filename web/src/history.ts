@@ -103,6 +103,37 @@ export function clearHistory() {
   localStorage.removeItem(KEY);
 }
 
+/**
+ * Combines two histories (this device's and the other device's, via the server).
+ * Per video: the most recently updated copy wins, but time watched / starts / length only grow.
+ * The same rules run on the server (api/hub.ts) — keep them in step.
+ */
+export function mergeWatches(a: Watch[], b: Watch[]): Watch[] {
+  const map = new Map<string, Watch>();
+  for (const w of [...a, ...b]) {
+    if (!w?.id) continue;
+    const prev = map.get(w.id);
+    if (!prev) {
+      map.set(w.id, w);
+      continue;
+    }
+    const [older, newer] = prev.at > w.at ? [w, prev] : [prev, w];
+    map.set(w.id, {
+      ...older,
+      ...newer,
+      sec: Math.max(older.sec || 0, newer.sec || 0),
+      dur: Math.max(older.dur || 0, newer.dur || 0),
+      ...(older.opens || newer.opens ? { opens: Math.max(older.opens || 0, newer.opens || 0) } : {}),
+    });
+  }
+  return [...map.values()].sort((x, y) => y.at - x.at).slice(0, MAX);
+}
+
+/** Replaces this device's history (used by sync). */
+export function replaceHistory(list: Watch[]) {
+  save([...list]);
+}
+
 /** How much one watch says about your taste (negative = you didn't like it). */
 function weight(w: Watch, now = Date.now()): number {
   const ageDays = (now - w.at) / 86400_000;

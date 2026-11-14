@@ -24,6 +24,10 @@
       "destination": "/api/hub?r=remote"
     },
     {
+      "source": "/api/history",
+      "destination": "/api/hub?r=history"
+    },
+    {
       "source": "/((?!api/|assets/|icon-|favicon).*)",
       "destination": "/index.html"
     }

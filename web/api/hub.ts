@@ -621,6 +621,75 @@ async function remote(req: Request) {
   return json({ command: cmd && Date.now() - cmd.at < REMOTE_TTL_MS ? cmd : null });
 }
 
+// ── Watch history shared by the TV and the phone ──
+// Merge rules match src/history.ts mergeWatches (functions here can't import from src/).
+type HWatch = { id: string; at: number; sec?: number; dur?: number; opens?: number; [k: string]: unknown };
+type HistoryFile = { items: HWatch[]; cleared: number };
+const HISTORY_MAX = 800;
+/** Devices' clocks can differ a little: resend a few minutes of overlap. */
+const HISTORY_OVERLAP_MS = 10 * 60_000;
+const HISTORY_PATH = () => PATH().replace(/state\.json$/, 'history.json');
+
+export function mergeHistory(a: HWatch[], b: HWatch[]): HWatch[] {
+  const map = new Map<string, HWatch>();
+  for (const w of [...a, ...b]) {
+    if (!w || typeof w.id !== 'string' || typeof w.at !== 'number') continue;
+    const prev = map.get(w.id);
+    if (!prev) {
+      map.set(w.id, w);
+      continue;
+    }
+    const [older, newer] = prev.at > w.at ? [w, prev] : [prev, w];
+    map.set(w.id, {
+      ...older,
+      ...newer,
+      sec: Math.max(older.sec || 0, newer.sec || 0),
+      dur: Math.max(older.dur || 0, newer.dur || 0),
+      ...(older.opens || newer.opens ? { opens: Math.max(older.opens || 0, newer.opens || 0) } : {}),
+    });
+  }
+  return [...map.values()].sort((x, y) => y.at - x.at).slice(0, HISTORY_MAX);
+}
+
+async function readHistory(): Promise<HistoryFile> {
+  const token = blobToken();
+  try {
+    const r = await get(HISTORY_PATH(), { access, useCache: false, ...(token ? { token } : {}) });
+    if (!r || r.statusCode !== 200) return { items: [], cleared: 0 };
+    const f = JSON.parse(await new Response(r.stream).text()) as HistoryFile;
+    return { items: f.items || [], cleared: f.cleared || 0 };
+  } catch {
+    return { items: [], cleared: 0 };
+  }
+}
+
+async function writeHistory(f: HistoryFile) {
+  const token = blobToken();
+  await put(HISTORY_PATH(), JSON.stringify(f), {
+    access, addRandomSuffix: false, allowOverwrite: true, contentType: 'application/json', ...(token ? { token } : {}),
+  });
+}
+
+async function history(req: Request) {
+  if (!(await isTvApp(req))) return json({ error: 'unauthorized' }, 401);
+  if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405);
+  const body = (await req.json().catch(() => ({}))) as { items?: HWatch[]; since?: number; action?: string };
+  const f = await readHistory();
+  if (body.action === 'clear') {
+    const cleared = Date.now();
+    await writeHistory({ items: [], cleared });
+    return json({ items: [], cleared });
+  }
+  const incoming = (Array.isArray(body.items) ? body.items : []).filter((w) => !f.cleared || w.at > f.cleared).slice(0, HISTORY_MAX);
+  if (incoming.length) {
+    f.items = mergeHistory(f.items, incoming);
+    await writeHistory(f);
+  }
+  const since = Number(body.since) || 0;
+  const items = since ? f.items.filter((w) => w.at > since - HISTORY_OVERLAP_MS) : f.items;
+  return json({ items, cleared: f.cleared });
+}
+
 async function handle(req: Request) {
   const url = new URL(req.url);
   const route = url.searchParams.get('r') || url.pathname.split('/').pop();
@@ -629,6 +698,7 @@ async function handle(req: Request) {
     if (route === 'picks') return await picks(req, url);
     if (route === 'sync') return await sync(req);
     if (route === 'remote') return await remote(req);
+    if (route === 'history') return await history(req);
     return json({ error: 'not found' }, 404);
   } catch (e) {
     return json({ error: (e as Error).message }, 500);

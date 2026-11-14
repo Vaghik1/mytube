@@ -352,3 +352,39 @@ describe('/api/remote ("Play on TV" from the phone)', () => {
     expect((await hub.POST(req({ method: 'POST', body: JSON.stringify({ videoId: 'nope' }) }))).status).toBe(400);
   });
 });
+
+describe('/api/history (same history on TV and phone)', () => {
+  const signedIn = () =>
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ aud: 'client-123', expires_in: '3600' }), { status: 200 })));
+  const post = (body: unknown) =>
+    hub.POST(new Request('https://mytube.test/api/hub?r=history', { method: 'POST', headers: { Authorization: 'Bearer ya29.device' }, body: JSON.stringify(body) }));
+
+  it('keeps what each device sends and returns the combined history', async () => {
+    signedIn();
+    await post({ items: [{ id: 'tv1', at: 1000, sec: 300, pos: 300, dur: 600 }] });
+    const res = await (await post({ items: [{ id: 'ph1', at: 2000, sec: 50, pos: 50, dur: 600 }] })).json();
+    expect(res.items.map((w: { id: string }) => w.id)).toEqual(['ph1', 'tv1']);
+  });
+
+  it('returns only recent changes when asked', async () => {
+    signedIn();
+    const now = Date.now();
+    await post({ items: [{ id: 'old', at: now - 86_400_000 }, { id: 'new', at: now }] });
+    const res = await (await post({ items: [], since: now - 1000 })).json();
+    expect(res.items.map((w: { id: string }) => w.id)).toEqual(['new']);
+  });
+
+  it('clear wipes it and ignores older entries sent afterwards', async () => {
+    signedIn();
+    await post({ items: [{ id: 'a', at: Date.now() - 5000 }] });
+    const { cleared } = await (await post({ action: 'clear' })).json();
+    const res = await (await post({ items: [{ id: 'a', at: cleared - 5000 }] })).json();
+    expect(res.items).toEqual([]);
+    expect(res.cleared).toBe(cleared);
+  });
+
+  it('needs your sign-in', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 400 })));
+    expect((await post({ items: [] })).status).toBe(401);
+  });
+});

@@ -11,6 +11,7 @@ import type { Queue } from '../components/VideoCard';
 import { VideoGrid } from '../components/VideoGrid';
 import { focusFirst, isTouch, openInYouTube, pushBackHandler, pushKeyHandler } from '../tv';
 import { sendToTv } from '../remote';
+import { syncSoon } from '../historySync';
 import { fmtCount, fmtDuration, timeAgo } from '../util';
 
 
@@ -251,6 +252,7 @@ export function Watch() {
         // Ended: count as finished even if YouTube reports a time just short of the end.
         const pos = p?.getPlayerState?.() === 0 ? videoRef.current.duration : p?.getCurrentTime?.();
         recordWatch(videoRef.current, watched.current, pos);
+        syncSoon(); // let the other device know
       }
     };
   }, [id]);

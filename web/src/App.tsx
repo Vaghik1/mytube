@@ -4,6 +4,7 @@ import { isSignedIn, onAuthChange } from './auth';
 import { syncProfile } from './agent';
 import { startPreviews } from './preview';
 import { listenForTvCommands } from './remote';
+import { startHistorySync } from './historySync';
 import { isTVApp } from './tv';
 import { Sidebar } from './components/Sidebar';
 import { PhoneChrome } from './components/PhoneChrome';
@@ -40,6 +41,9 @@ export function App() {
     (window as any).__mytubeVoiceKey = () => navigate('/search?voice=1');
     return () => void delete (window as any).__mytubeVoiceKey;
   }, [navigate]);
+
+  // Same watch history on the TV and the phone.
+  useEffect(() => (signedIn ? startHistorySync() : undefined), [signedIn]);
 
   // TV: play videos sent from the phone ("Play on TV").
   useEffect(() => {
