@@ -27,6 +27,8 @@ export type Video = {
   tags?: string[];
   /** Why this was suggested (e.g. ChatGPT's reason). */
   note?: string;
+  /** History page: when you last watched it (ms). */
+  watchedAt?: number;
 };
 
 export type Channel = {

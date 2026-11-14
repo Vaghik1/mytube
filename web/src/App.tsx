@@ -11,6 +11,7 @@ import { PhoneChrome } from './components/PhoneChrome';
 import { UpdateBanner } from './components/UpdateBanner';
 import { Channel } from './pages/Channel';
 import { Home } from './pages/Home';
+import { History } from './pages/History';
 import { Library, Playlist } from './pages/Library';
 import { Login } from './pages/Login';
 import { Search } from './pages/Search';
@@ -73,6 +74,7 @@ export function App() {
           <Route path="/search" element={<Search />} />
           <Route path="/subscriptions" element={<Subscriptions />} />
           <Route path="/library" element={<Library />} />
+          <Route path="/history" element={<History />} />
           <Route path="/playlist/:id" element={<Playlist />} />
           <Route path="/channel/:id" element={<Channel />} />
           <Route path="/settings" element={<Settings />} />

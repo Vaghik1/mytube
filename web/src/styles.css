@@ -183,6 +183,8 @@ main::-webkit-scrollbar { display: none; }
     background: #0f0f0f; border-top: 1px solid #262626; box-shadow: none; z-index: 30;
   }
   .sidebar .logo, .sidebar .me { display: none; }
+  /* Search lives in the top bar on phones */
+  .sidebar .nav-search { display: none; }
   .sidebar .label { opacity: 1; font-size: 1.05rem; }
   .nav-item { flex: 1; flex-direction: column; gap: .3rem; padding: .6rem .2rem; border-radius: 1rem; min-width: 0; }
   .nav-item:focus { background: none; color: var(--text); }

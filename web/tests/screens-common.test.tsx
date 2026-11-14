@@ -31,13 +31,13 @@ const video = (over: Partial<Video> = {}): Video => ({
 const inRouter = (ui: React.ReactNode, path = '/') => render(<MemoryRouter initialEntries={[path]}>{ui}</MemoryRouter>);
 
 describe('Sidebar / tab bar', () => {
-  it('has the five destinations with labels, and no Trending/category tab', () => {
+  it('has the six destinations with labels, and no Trending/category tab', () => {
     mockYouTube({ channels: () => ({ items: [] }) });
     inRouter(<Sidebar />);
-    for (const label of ['Search', 'Home', 'Subscriptions', 'Library', 'Settings'])
+    for (const label of ['Search', 'Home', 'Subscriptions', 'Library', 'History', 'Settings'])
       expect(screen.getByText(label)).toBeTruthy();
     expect(screen.queryByText('Trending')).toBeNull();
-    expect(screen.getAllByRole('link')).toHaveLength(5);
+    expect(screen.getAllByRole('link')).toHaveLength(6);
   });
 
   it('marks the current page', () => {

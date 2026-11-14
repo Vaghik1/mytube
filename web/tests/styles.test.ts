@@ -251,3 +251,10 @@ describe('TV side menu performance', () => {
     expect(computed(['.layout'], 'padding-left', 390)).toBe('0');
   });
 });
+
+describe('phone tab bar', () => {
+  it('has no Search tab (search is in the top bar); the TV menu keeps it', () => {
+    expect(computed(['.sidebar .nav-search'], 'display', 390)).toBe('none');
+    expect(computed(['.sidebar .nav-search'], 'display', 1920)).toBeUndefined();
+  });
+});

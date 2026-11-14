@@ -49,7 +49,9 @@ export function VideoCard({ v, queue, autoFocus }: { v: Video; queue?: Queue; au
       <div className="card-title">{b.title}</div>
       <div className="card-meta">{v.channelTitle}</div>
       <div className="card-meta">
-        {v.live
+        {v.watchedAt
+          ? `Watched ${timeAgo(new Date(v.watchedAt).toISOString())}`
+          : v.live
           ? `${v.liveViewers ? `${fmtCount(v.liveViewers)} watching` : 'Live now'}`
           : v.upcoming && v.scheduledStart
             ? `Starts ${fmtStart(v.scheduledStart)}`

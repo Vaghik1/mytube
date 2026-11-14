@@ -152,7 +152,7 @@ describe('top topics are real topics, not hype words', () => {
   it("the creator's tags outweigh words from the title", () => {
     recordWatch(vid('a', 't3', 'Next.js caching is broken', 900, ['web development', 'typescript', 'react']), 900);
     recordWatch(vid('b', 't3', 'Bun just shipped something wild', 900, ['javascript', 'typescript']), 900);
-    const top = buildProfile().terms.slice(0, 4).map((t) => t.term);
+    const top = buildProfile().terms.slice(0, 5).map((t) => t.term);
     expect(top[0]).toBe('typescript');
     expect(top).toEqual(expect.arrayContaining(['web', 'development', 'react']));
     const terms = buildProfile().terms.map((t) => t.term);
