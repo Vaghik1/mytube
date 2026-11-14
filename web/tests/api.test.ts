@@ -3,6 +3,8 @@ import {
   applyFilters,
   clearCache,
   INTEREST_KEEP_MS,
+  INTEREST_SEARCHES_PER_SLOT,
+  PICKS_AT_TOP,
   INTEREST_SLOT_MS,
   interestsToSearch,
   chunk,
@@ -272,14 +274,16 @@ describe('For you', () => {
     expect(calls(f, 'search').filter((u) => u.searchParams.get('q') === 'physics')).toHaveLength(1);
   });
 
-  it('searches at most 3 interests per half day (YouTube quota)', async () => {
-    saveRemotePrefs({ interests: ['a1', 'b2', 'c3', 'd4', 'e5'] });
+  const nine = ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'q9'];
+
+  it('searches only a few interests per half day (YouTube search allowance)', async () => {
+    saveRemotePrefs({ interests: nine });
     const f = mockYouTube(subsRoutes([], {}), { '/api/picks': () => ({ picks: [] }) });
     await getForYou();
-    expect(calls(f, 'search')).toHaveLength(3);
+    expect(calls(f, 'search')).toHaveLength(INTEREST_SEARCHES_PER_SLOT);
     clearCache('fy.'); // even when the feed is rebuilt, no more searches until the next half day
     await getForYou();
-    expect(calls(f, 'search')).toHaveLength(3);
+    expect(calls(f, 'search')).toHaveLength(INTEREST_SEARCHES_PER_SLOT);
   });
 
   it('takes turns: never-searched interests first, then the oldest; all results stay in the feed for a week', async () => {
@@ -287,7 +291,7 @@ describe('For you', () => {
     const t0 = new Date('2026-11-14T08:00:00Z').getTime();
     vi.setSystemTime(t0);
     signIn();
-    saveRemotePrefs({ interests: ['a1', 'b2', 'c3', 'd4', 'e5'] });
+    saveRemotePrefs({ interests: nine });
     const routes = subsRoutes([], {});
     routes.search = (p: URLSearchParams) => ({ items: [{ id: { videoId: `${p.get('q')}-vid` } }] });
     const f = mockYouTube(routes, { '/api/picks': () => ({ picks: [] }) });
@@ -295,28 +299,39 @@ describe('For you', () => {
 
     await getForYou();
     const first = searched();
-    expect(first).toHaveLength(3);
+    expect(first).toHaveLength(INTEREST_SEARCHES_PER_SLOT);
 
     vi.setSystemTime(t0 + INTEREST_SLOT_MS + 1000);
     signIn(); // the test sign-in lasts an hour
     clearCache('fy.');
     const ids = (await getForYou()).map((x) => x.id);
-    const second = searched().slice(3);
-    // the two never searched, then the oldest of the first round
-    expect(second).toEqual(expect.arrayContaining(['a1', 'b2', 'c3', 'd4', 'e5'].filter((q) => !first.includes(q))));
-    expect(second).toHaveLength(3);
-    // videos from all five interests are in the feed now
-    expect(ids).toEqual(expect.arrayContaining(['a1-vid', 'b2-vid', 'c3-vid', 'd4-vid', 'e5-vid']));
-    expect(interestsToSearch(['a1', 'b2', 'c3', 'd4', 'e5'])).toEqual([]); // budget used up
+    const second = searched().slice(first.length);
+    expect(second).toHaveLength(INTEREST_SEARCHES_PER_SLOT);
+    // the never-searched ones come first
+    expect(second).toEqual(expect.arrayContaining(nine.filter((q) => !first.includes(q))));
+    // videos from all nine interests are in the feed now
+    expect(ids).toEqual(expect.arrayContaining(nine.map((q) => `${q}-vid`)));
+    expect(interestsToSearch(nine)).toEqual([]); // allowance used up
 
     // removed interests are forgotten; results older than a week are dropped
-    saveRemotePrefs({ interests: ['a1'] });
+    saveRemotePrefs({ interests: ['q1'] });
     vi.setSystemTime(t0 + INTEREST_KEEP_MS + INTEREST_SLOT_MS + 2000);
     signIn();
     clearCache('fy.');
     const later = (await getForYou()).map((x) => x.id);
-    expect(later).not.toContain('b2-vid');
+    expect(later).not.toContain('q2-vid');
     vi.useRealTimers();
+  });
+
+  it("spreads ChatGPT's extra picks through the list instead of dropping them", async () => {
+    const routes = subsRoutes(['a'], { a: ['a-1', 'a-2', 'a-3', 'a-4', 'a-5', 'a-6', 'a-7', 'a-8'] });
+    const picks = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'].map((id) => ({ id: `gpt-${id}`, type: 'video', videoId: `gpt-${id}`, status: 'new' }));
+    mockYouTube(routes, { '/api/picks': () => ({ picks }) });
+    const ids = (await getForYou()).map((x) => x.id);
+    expect(ids.slice(0, PICKS_AT_TOP)).toEqual(['gpt-p1', 'gpt-p2', 'gpt-p3', 'gpt-p4']);
+    for (const p of ['gpt-p5', 'gpt-p6', 'gpt-p7']) expect(ids).toContain(p);
+    // not all bunched together: some feed videos sit between the later picks
+    expect(ids.indexOf('gpt-p6') - ids.indexOf('gpt-p5')).toBeGreaterThan(1);
   });
 
   it('still works when the assistant hub is down', async () => {

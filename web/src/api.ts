@@ -429,7 +429,8 @@ export async function channelsUploads(ids: string[], perChannel: number): Promis
 // A search costs 100 of the 10,000 daily quota units, so MyTube searches only a few interests
 // per half day, taking turns (never searched first, then the oldest). Every interest's results
 // are kept for a week, so the feed draws on all of them, not only the ones searched today.
-export const INTEREST_SEARCHES_PER_SLOT = 3;
+// Searches have their own 100-a-day allowance (shared by TV, phone, your own searches and live checks).
+export const INTEREST_SEARCHES_PER_SLOT = 6;
 export const INTEREST_SLOT_MS = 12 * 3600_000;
 export const INTEREST_KEEP_MS = 7 * 86400_000;
 const IQ = 'mytube.iq.'; // + interest → { t, v }
@@ -513,7 +514,7 @@ async function interestVideos(interests: string[]): Promise<Video[]> {
 async function preferenceVideos(): Promise<{ fromChannels: Video[]; fromInterests: Video[]; favIds: string[] }> {
   const r = loadRemotePrefs();
   const favIds = (
-    await Promise.all(r.favoriteChannels.slice(0, 15).map((c) => resolveChannelId(c).catch(() => undefined)))
+    await Promise.all(r.favoriteChannels.slice(0, 30).map((c) => resolveChannelId(c).catch(() => undefined)))
   ).filter(Boolean) as string[];
   const [fromChannels, fromInterests] = await Promise.all([
     favIds.length
@@ -524,6 +525,9 @@ async function preferenceVideos(): Promise<{ fromChannels: Video[]; fromInterest
   return { fromChannels, fromInterests, favIds };
 }
 
+export const PICKS_AT_TOP = 4;
+export const PICK_EVERY = 3;
+
 export async function getForYou(): Promise<Video[]> {
   const agent = import('./agent');
   const [feed, picks, streams] = await Promise.all([
@@ -533,10 +537,19 @@ export async function getForYou(): Promise<Video[]> {
   ]);
   // Top of the feed: streams that are live right now from channels you (or ChatGPT) follow,
   // then ChatGPT's newest picks, then streams starting within a day, then everything else.
-  const top = [...streams.live, ...applyFilters(picks).slice(0, 4), ...streams.soon.slice(0, 3)];
+  // ChatGPT's other picks are spread through the rest of the list, one in every PICK_EVERY videos.
+  const goodPicks = applyFilters(picks);
+  const top = [...streams.live, ...goodPicks.slice(0, PICKS_AT_TOP), ...streams.soon.slice(0, 3)];
+  const rest: Video[] = [];
+  const later = goodPicks.slice(PICKS_AT_TOP);
+  feed.forEach((v, i) => {
+    rest.push(v);
+    if ((i + 1) % (PICK_EVERY - 1) === 0 && later.length) rest.push(later.shift()!);
+  });
+  rest.push(...later);
   const out: Video[] = [];
   const ids = new Set<string>();
-  for (const v of [...top, ...feed]) if (!ids.has(v.id)) ids.add(v.id), out.push(v);
+  for (const v of [...top, ...rest]) if (!ids.has(v.id)) ids.add(v.id), out.push(v);
   return out;
 }
 
