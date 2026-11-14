@@ -9,7 +9,8 @@ import { isTouch } from './tv';
 import { loadYTApi } from './yt';
 
 export const SCROLL_IDLE_MS = 350;
-export const FOCUS_DWELL_MS = 1000;
+// TV sticks are slow to start a player; waiting a little longer keeps moving through the list smooth.
+export const FOCUS_DWELL_MS = 1500;
 
 let active: string | null = null;
 const listeners = new Set<() => void>();

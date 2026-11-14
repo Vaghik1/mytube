@@ -25,6 +25,7 @@ export function VideoCard({ v, queue, autoFocus }: { v: Video; queue?: Queue; au
           src={b.thumb}
           alt=""
           loading="lazy"
+          decoding="async"
           onError={(e) => {
             // DeArrow's thumbnail isn't ready: show YouTube's
             if (e.currentTarget.src !== b.fallbackThumb) e.currentTarget.src = b.fallbackThumb;

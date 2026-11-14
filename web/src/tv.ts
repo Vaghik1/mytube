@@ -41,11 +41,11 @@ export function handleBack(): boolean {
 type Dir = 'up' | 'down' | 'left' | 'right';
 const DIRS: Record<string, Dir> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
 
+// Kept cheap on purpose (runs for every element on every key press): no style lookups.
 function visible(el: HTMLElement) {
   const r = el.getBoundingClientRect();
   if (r.width === 0 || r.height === 0) return false;
-  const style = getComputedStyle(el);
-  return style.visibility !== 'hidden' && !el.closest('[aria-hidden="true"]');
+  return !el.closest('[aria-hidden="true"]');
 }
 
 function candidates(): HTMLElement[] {
@@ -56,7 +56,8 @@ function candidates(): HTMLElement[] {
 export function focusEl(el: HTMLElement | null | undefined, center = true) {
   if (!el || isTouch) return;
   el.focus({ preventScroll: true });
-  el.scrollIntoView({ block: center ? 'center' : 'nearest', inline: 'nearest', behavior: 'smooth' });
+  // Instant: smooth scrolling queues up and lags on TV sticks when you hold a direction.
+  el.scrollIntoView({ block: center ? 'center' : 'nearest', inline: 'nearest' });
 }
 
 export function focusFirst(): boolean {
@@ -168,7 +169,15 @@ export function initTV(): () => void {
     const a = document.activeElement;
     if (!a || a === document.body || !document.contains(a)) focusFirst();
   };
-  const observer = new MutationObserver(() => requestAnimationFrame(keepFocus));
+  let pending = false;
+  const observer = new MutationObserver(() => {
+    if (pending) return; // one check per frame, however many changes
+    pending = true;
+    requestAnimationFrame(() => {
+      pending = false;
+      keepFocus();
+    });
+  });
   observer.observe(document.body, { childList: true, subtree: true });
   teardown = () => {
     document.removeEventListener('keydown', onKey, true);

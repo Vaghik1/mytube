@@ -24,9 +24,17 @@ const KEY = 'mytube.history';
 const MAX = 800;
 const HALF_LIFE_DAYS = 14;
 
+// Parsed once and reused until the stored text changes (every video card asks for it).
+let memoRaw: string | null = null;
+let memo: Watch[] = [];
 export function loadHistory(): Watch[] {
   try {
-    return JSON.parse(localStorage.getItem(KEY) || '[]');
+    const raw = localStorage.getItem(KEY);
+    if (raw !== memoRaw) {
+      memo = JSON.parse(raw || '[]');
+      memoRaw = raw;
+    }
+    return memo.slice();
   } catch {
     return [];
   }

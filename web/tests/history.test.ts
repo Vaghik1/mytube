@@ -217,3 +217,15 @@ describe("finished vs unfinished videos (like YouTube's red bar)", () => {
     expect(resumePoint('long')).toBeNull();
   });
 });
+
+describe('history is read fast', () => {
+  it('is parsed once and still sees new changes', () => {
+    recordWatch(vid('m1', 'c', 'A', 600), 30, 30);
+    const a = loadHistory();
+    expect(loadHistory()).toEqual(a);
+    recordWatch(vid('m2', 'c', 'B', 600), 30, 30);
+    expect(loadHistory().map((w) => w.id).sort()).toEqual(['m1', 'm2']);
+    localStorage.clear();
+    expect(loadHistory()).toEqual([]);
+  });
+});

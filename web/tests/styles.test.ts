@@ -241,3 +241,13 @@ describe('preview player', () => {
     expect(computed(['.preview iframe'], 'top', 390)).toBe('-50%');
   });
 });
+
+describe('TV side menu performance', () => {
+  it('floats over the page, so opening it never re-lays out the video grid', () => {
+    expect(computed(['.sidebar'], 'position', 1920)).toBe('fixed');
+    expect(computed(['.layout'], 'padding-left', 1920)).toContain('var(--sidebar)');
+  });
+  it('the phone keeps its bottom tab bar with no gap on the left', () => {
+    expect(computed(['.layout'], 'padding-left', 390)).toBe('0');
+  });
+});
