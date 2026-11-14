@@ -364,7 +364,7 @@ const TOOLS = [
     name: 'recommend_videos',
     title: 'Send video picks to the TV',
     description:
-      "Adds YouTube videos to the top of the viewer's MyTube video list (TV and phone), mixed in like any other video. Each item must be a specific YouTube video (URL or 11-character id). The first few lead the list and the rest are spread through it, so send 5-10 per run. Only send videos genuinely likely to interest them; skip anything already watched or already suggested.",
+      "Adds YouTube videos to the viewer's MyTube video list (TV and phone), merged with their subscriptions: about one in every three videos comes from you. Each item must be a specific YouTube video (URL or 11-character id). Send 5-10 per run. Only send videos genuinely likely to interest them; skip anything already watched or already suggested.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -489,7 +489,7 @@ async function mcp(req: Request, url: URL) {
             ],
           },
           instructions:
-            "MyTube is the viewer's personal YouTube app (TV and phone). MyTube can only afford a few YouTube searches a day, so YOU are its discovery engine. On each run: (1) call get_viewer_profile; (2) search the web for specific, recent, high-quality YouTube videos across the viewer's interests and favourite topics, rotating through different interests each run; (3) call recommend_videos with 5-10 picks (a short reason each), never resending anything already watched or suggested. The first few picks lead the viewer's list and the rest are spread through it. For live events the viewer cares about (major tournaments, premieres), call watch_channel_live with the official broadcaster's channel. With update_viewer_preferences: keep interests as short search phrases of 1-4 words (e.g. 'queen's gambit', 'james webb telescope', never sentences), and for each interest add its 2-3 best YouTube channels as favourite channels, because MyTube follows favourite channels' uploads at almost no cost. Quality over quantity.",
+            "MyTube is the viewer's personal YouTube app (TV and phone). MyTube can only afford a few YouTube searches a day, so YOU are its discovery engine. On each run: (1) call get_viewer_profile; (2) search the web for specific, recent, high-quality YouTube videos across the viewer's interests and favourite topics, rotating through different interests each run; (3) call recommend_videos with 5-10 picks (a short reason each), never resending anything already watched or suggested. Your picks are merged with the viewer's subscriptions (about one in three videos). For live events the viewer cares about (major tournaments, premieres), call watch_channel_live with the official broadcaster's channel. With update_viewer_preferences: keep interests as short search phrases of 1-4 words (e.g. 'queen's gambit', 'james webb telescope', never sentences), and for each interest add its 2-3 best YouTube channels as favourite channels, because MyTube follows favourite channels' uploads at almost no cost. Quality over quantity.",
         });
       } else if (method === 'ping') reply({});
       else if (method === 'tools/list') reply({ tools: TOOLS });

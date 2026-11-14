@@ -4,7 +4,6 @@ import {
   clearCache,
   INTEREST_KEEP_MS,
   INTEREST_SEARCHES_PER_SLOT,
-  PICKS_AT_TOP,
   INTEREST_SLOT_MS,
   interestsToSearch,
   chunk,
@@ -15,6 +14,7 @@ import {
   resolveChannelId,
   search,
   toVideo,
+  weave,
   type Video,
 } from '../src/api';
 import { saveRemotePrefs, saveSettings, defaultSettings } from '../src/config';
@@ -238,16 +238,21 @@ describe('For you', () => {
     expect(calls(f, 'videos').some((u) => u.searchParams.get('chart') === 'mostPopular')).toBe(false);
   });
 
-  it("puts ChatGPT's picks first, with their reason", async () => {
-    mockYouTube(subsRoutes(['a'], { a: ['a-1'] }), {
-      '/api/picks': () => ({ picks: [{ id: 'p', type: 'video', videoId: 'gpt-1', reason: 'Great endgame', status: 'new' }] }),
+  it("merges ChatGPT's picks with your subscriptions: two of yours, then one of ChatGPT's", async () => {
+    mockYouTube(subsRoutes(['a'], { a: ['a-1', 'a-2', 'a-3', 'a-4'] }), {
+      '/api/picks': () => ({
+        picks: [
+          { id: 'p', type: 'video', videoId: 'gpt-1', reason: 'Great endgame', status: 'new' },
+          { id: 'q', type: 'video', videoId: 'gpt-2', reason: 'r', status: 'new' },
+        ],
+      }),
     });
     const feed = await getForYou();
-    expect(feed[0].id).toBe('gpt-1');
-    expect(feed[0].note).toBe('Great endgame');
+    expect(feed.map((v) => v.id)).toEqual(['a-1', 'a-2', 'gpt-1', 'a-3', 'a-4', 'gpt-2']);
+    expect(feed[2].note).toBe('Great endgame');
   });
 
-  it('puts live streams from your subscriptions first, then ChatGPT picks', async () => {
+  it('puts live streams from your subscriptions first, then the merged list', async () => {
     const routes = subsRoutes(['a'], { a: ['a-1', 'a-live'] });
     const videos = routes.videos;
     routes.videos = (p: URLSearchParams) => {
@@ -258,7 +263,7 @@ describe('For you', () => {
       '/api/picks': () => ({ picks: [{ id: 'p', type: 'video', videoId: 'gpt-1', reason: 'r', status: 'new' }] }),
     });
     const ids = (await getForYou()).map((x) => x.id);
-    expect(ids.slice(0, 2)).toEqual(['a-live', 'gpt-1']);
+    expect(ids).toEqual(['a-live', 'a-1', 'gpt-1']);
     expect(ids.filter((id) => id === 'a-live')).toHaveLength(1); // not repeated further down
   });
 
@@ -323,15 +328,21 @@ describe('For you', () => {
     vi.useRealTimers();
   });
 
-  it("spreads ChatGPT's extra picks through the list instead of dropping them", async () => {
-    const routes = subsRoutes(['a'], { a: ['a-1', 'a-2', 'a-3', 'a-4', 'a-5', 'a-6', 'a-7', 'a-8'] });
+  it("never starts with a block of ChatGPT videos, and drops none of them", async () => {
+    const routes = subsRoutes(['a'], { a: ['a-1', 'a-2', 'a-3', 'a-4', 'a-5', 'a-6'] });
     const picks = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'].map((id) => ({ id: `gpt-${id}`, type: 'video', videoId: `gpt-${id}`, status: 'new' }));
     mockYouTube(routes, { '/api/picks': () => ({ picks }) });
     const ids = (await getForYou()).map((x) => x.id);
-    expect(ids.slice(0, PICKS_AT_TOP)).toEqual(['gpt-p1', 'gpt-p2', 'gpt-p3', 'gpt-p4']);
-    for (const p of ['gpt-p5', 'gpt-p6', 'gpt-p7']) expect(ids).toContain(p);
-    // not all bunched together: some feed videos sit between the later picks
-    expect(ids.indexOf('gpt-p6') - ids.indexOf('gpt-p5')).toBeGreaterThan(1);
+    const isGpt = (id: string) => id.startsWith('gpt-');
+    expect(ids.slice(0, 9).filter(isGpt)).toHaveLength(3); // a third of the first screen
+    for (let i = 1; i < 9; i++) expect(isGpt(ids[i]) && isGpt(ids[i - 1])).toBe(false); // never two in a row while yours last
+    expect(ids.filter(isGpt)).toHaveLength(7); // the rest come after your videos run out
+  });
+
+  it('weave: two of yours, one of ChatGPT, leftovers at the end', () => {
+    const vs = (...ids: string[]) => ids.map((id) => ({ id }) as Video);
+    expect(weave(vs('m1', 'm2', 'm3', 'm4', 'm5'), vs('g1', 'g2')).map((v) => v.id)).toEqual(['m1', 'm2', 'g1', 'm3', 'm4', 'g2', 'm5']);
+    expect(weave(vs('m1'), vs('g1', 'g2', 'g3')).map((v) => v.id)).toEqual(['m1', 'g1', 'g2', 'g3']);
   });
 
   it('still works when the assistant hub is down', async () => {

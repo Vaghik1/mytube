@@ -301,7 +301,21 @@ export async function getSubscriptionFeed(): Promise<Video[]> {
 
 /** Starter feed before MyTube has learned anything: only your own signals, no regional charts.
  *  New uploads from your subscriptions mixed with uploads from channels whose videos you liked. */
-async function getStarterFeed(): Promise<Video[]> {
+/** Your own videos and ChatGPT's, each in its own ranked list; getForYou merges them. */
+type Streams = { mine: Video[]; gpt: Video[] };
+
+/** Round-robin through several lists, skipping repeats and videos you've seen. */
+function roundRobin(lists: Video[][], seen: Set<string>, ids = new Set<string>()): Video[] {
+  const out: Video[] = [];
+  for (let i = 0; i < Math.max(0, ...lists.map((l) => l.length)); i++)
+    for (const l of lists) {
+      const v = l[i];
+      if (v && !ids.has(v.id) && !seen.has(v.id)) ids.add(v.id), out.push(v);
+    }
+  return applyFilters(out);
+}
+
+async function getStarterFeed(): Promise<Streams> {
   const [subs, liked] = await Promise.all([
     getSubscriptionFeed().catch(() => [] as Video[]),
     cached('fy.likedlist', 3600_000, () => getLiked().then((p) => p.items)).catch(() => [] as Video[]),
@@ -312,12 +326,10 @@ async function getStarterFeed(): Promise<Video[]> {
     () => [] as Video[],
   );
   const seen = seenIds();
-  const out: Video[] = [];
   const ids = new Set<string>();
-  const push = (v?: Video) => v && !ids.has(v.id) && !seen.has(v.id) && (ids.add(v.id), out.push(v));
-  const lists = [subs, prefs.fromChannels, prefs.fromInterests, fromLiked];
-  for (let i = 0; i < Math.max(...lists.map((l) => l.length)); i++) for (const l of lists) push(l[i]);
-  return applyFilters(out);
+  const mine = roundRobin([subs, fromLiked], seen, ids);
+  const gpt = roundRobin([prefs.fromChannels, prefs.fromInterests], seen, ids);
+  return { mine, gpt };
 }
 
 export async function isSubscribed(channelId: string): Promise<string | null> {
@@ -525,8 +537,20 @@ async function preferenceVideos(): Promise<{ fromChannels: Video[]; fromInterest
   return { fromChannels, fromInterests, favIds };
 }
 
-export const PICKS_AT_TOP = 4;
-export const PICK_EVERY = 3;
+/** In For you, after every MINE_PER_GPT of your videos comes one from ChatGPT (a pick, a favourite channel or an interest). */
+export const MINE_PER_GPT = 2;
+
+/** Your videos and ChatGPT's woven together: mine, mine, gpt, mine, mine, gpt… (leftovers at the end). */
+export function weave(mine: Video[], gpt: Video[], minePerGpt = MINE_PER_GPT): Video[] {
+  const out: Video[] = [];
+  let m = 0;
+  let g = 0;
+  while (m < mine.length || g < gpt.length) {
+    for (let k = 0; k < minePerGpt && m < mine.length; k++) out.push(mine[m++]);
+    if (g < gpt.length) out.push(gpt[g++]);
+  }
+  return out;
+}
 
 export async function getForYou(): Promise<Video[]> {
   const agent = import('./agent');
@@ -535,25 +559,17 @@ export async function getForYou(): Promise<Video[]> {
     agent.then((m) => m.getPickVideos()).catch(() => [] as Video[]),
     agent.then((m) => m.getLiveNow()).catch(() => ({ live: [] as Video[], soon: [] as Video[] })),
   ]);
-  // Top of the feed: streams that are live right now from channels you (or ChatGPT) follow,
-  // then ChatGPT's newest picks, then streams starting within a day, then everything else.
-  // ChatGPT's other picks are spread through the rest of the list, one in every PICK_EVERY videos.
-  const goodPicks = applyFilters(picks);
-  const top = [...streams.live, ...goodPicks.slice(0, PICKS_AT_TOP), ...streams.soon.slice(0, 3)];
-  const rest: Video[] = [];
-  const later = goodPicks.slice(PICKS_AT_TOP);
-  feed.forEach((v, i) => {
-    rest.push(v);
-    if ((i + 1) % (PICK_EVERY - 1) === 0 && later.length) rest.push(later.shift()!);
-  });
-  rest.push(...later);
+  // ChatGPT's share: its hand-picked videos alternating with its favourite channels / interests.
+  const gpt = weave(applyFilters(picks), feed.gpt, 1);
+  // Streams that are live right now lead the list; then your videos and ChatGPT's, merged.
+  const mine = [...streams.soon.slice(0, 3), ...feed.mine];
   const out: Video[] = [];
   const ids = new Set<string>();
-  for (const v of [...top, ...rest]) if (!ids.has(v.id)) ids.add(v.id), out.push(v);
+  for (const v of [...streams.live, ...weave(mine, gpt)]) if (!ids.has(v.id)) ids.add(v.id), out.push(v);
   return out;
 }
 
-async function getLearnedFeed(): Promise<Video[]> {
+async function getLearnedFeed(): Promise<Streams> {
   const profile = buildProfile();
   if (profile.watches < 3) return getStarterFeed();
 
@@ -586,8 +602,8 @@ async function getLearnedFeed(): Promise<Video[]> {
   for (const id of prefs.favIds) chScore.set(id, Math.max(chScore.get(id) || 0, 1));
   const subIds = new Set(fromSubs.map((v) => v.channelId));
 
-  const scored = new Map<string, { v: Video; s: number }>();
-  const add = (list: Video[], bonus: number) => {
+  const scored = new Map<string, { v: Video; s: number; gpt: boolean }>();
+  const add = (list: Video[], bonus: number, gpt = false) => {
     for (const v of applyFilters(list)) {
       if (seen.has(v.id) || scored.has(v.id)) continue;
       const ageDays = (Date.now() - new Date(v.publishedAt).getTime()) / 86400_000;
@@ -601,17 +617,23 @@ async function getLearnedFeed(): Promise<Video[]> {
         (subIds.has(v.channelId) ? 0.3 : 0) +
         bonus +
         Math.random() * 0.4;
-      scored.set(v.id, { v, s });
+      scored.set(v.id, { v, s, gpt });
     }
   };
+  // Your own sources first, so a video from a channel you watch counts as yours even if ChatGPT also likes it.
   add(fromChannels, 0.3);
-  add(prefs.fromChannels, 0.3);
   add(fromSearch, 0.2);
-  add(prefs.fromInterests, 0.2);
   add(fromSubs, 0);
+  add(prefs.fromChannels, 0.3, true);
+  add(prefs.fromInterests, 0.2, true);
 
-  // Pick the best, but don't let one channel take over the screen.
-  const pool2 = [...scored.values()];
+  const all = [...scored.values()];
+  return { mine: diverse(all.filter((c) => !c.gpt)), gpt: diverse(all.filter((c) => c.gpt)) };
+}
+
+/** Best first, but don't let one channel take over the screen. */
+function diverse(pool: { v: Video; s: number }[]): Video[] {
+  const pool2 = [...pool];
   const perChannel = new Map<string, number>();
   const out: Video[] = [];
   while (pool2.length && out.length < 120) {
