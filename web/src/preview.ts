@@ -6,9 +6,10 @@
 import { useSyncExternalStore } from 'react';
 import { loadSettings } from './config';
 import { isTouch } from './tv';
+import { loadYTApi } from './yt';
 
-export const SCROLL_IDLE_MS = 800;
-export const FOCUS_DWELL_MS = 1500;
+export const SCROLL_IDLE_MS = 350;
+export const FOCUS_DWELL_MS = 1000;
 
 let active: string | null = null;
 const listeners = new Set<() => void>();
@@ -78,6 +79,8 @@ export function pickPreviewCard(): string | null {
 
 /** Starts watching scrolling (phone) or focus (TV). Returns a function that stops it. */
 export function startPreviews(): () => void {
+  // Load YouTube's player code now, so the first preview starts without waiting for it.
+  if (allowed()) void loadYTApi();
   let timer = 0;
   const later = (fn: () => void, ms: number) => {
     window.clearTimeout(timer);

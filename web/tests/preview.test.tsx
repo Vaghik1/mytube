@@ -176,7 +176,7 @@ describe('the preview player', () => {
     const { container } = render(<Preview id="v1" />);
     await act(async () => void (await vi.advanceTimersByTimeAsync(10)));
     const p = players[0];
-    expect(p.opts.playerVars).toMatchObject({ mute: 1, controls: 0, autoplay: 1, playsinline: 1 });
+    expect(p.opts.playerVars).toMatchObject({ mute: 1, controls: 0, autoplay: 1, playsinline: 1, cc_load_policy: 1 });
     expect(p.calls).toContain('mute');
     expect(container.querySelector('.preview')!.className).not.toContain('playing');
     act(() => p.emit(1));

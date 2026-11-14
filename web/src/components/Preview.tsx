@@ -3,7 +3,7 @@ import { loadYTApi } from '../yt';
 
 export const PREVIEW_MAX_MS = 60_000;
 /** YouTube shows a title, a big play/pause button and logos for the first moments: wait them out. */
-export const REVEAL_AFTER_MS = 2500;
+export const REVEAL_AFTER_MS = 1500;
 
 /**
  * A muted, control-less YouTube player laid over a thumbnail.
@@ -45,6 +45,8 @@ export function Preview({ id }: { id: string }) {
           fs: 0,
           rel: 0,
           iv_load_policy: 3,
+          cc_load_policy: 1, // subtitles on (when the video has them)
+          cc_lang_pref: 'en',
           playsinline: 1,
           modestbranding: 1,
           origin: window.location.origin,
@@ -52,6 +54,11 @@ export function Preview({ id }: { id: string }) {
         events: {
           onReady: (e: any) => {
             e.target.mute();
+            try {
+              e.target.loadModule?.('captions');
+            } catch {
+              /* ignore */
+            }
             e.target.playVideo();
           },
           onStateChange: (e: any) => {
