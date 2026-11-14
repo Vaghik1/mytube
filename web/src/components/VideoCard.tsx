@@ -3,7 +3,7 @@ import type { Video } from '../api';
 import { fmtCount, fmtDuration, fmtStart, timeAgo } from '../util';
 import { usePreviewActive } from '../preview';
 import { Preview } from './Preview';
-import { resumePoint } from '../history';
+import { startPoint } from '../history';
 import { useBranding } from '../community';
 
 export type Queue = { ids: string[]; index: number; title?: string };
@@ -11,7 +11,7 @@ export type Queue = { ids: string[]; index: number; title?: string };
 export function VideoCard({ v, queue, autoFocus }: { v: Video; queue?: Queue; autoFocus?: boolean }) {
   const nav = useNavigate();
   const previewing = usePreviewActive(v.id);
-  const resume = v.live ? null : resumePoint(v.id);
+  const resume = v.live ? null : startPoint(v.id);
   const b = useBranding(v);
   return (
     <button
@@ -39,7 +39,7 @@ export function VideoCard({ v, queue, autoFocus }: { v: Video; queue?: Queue; au
         ) : v.duration ? (
           <span className="badge">{fmtDuration(v.duration)}</span>
         ) : null}
-        {resume && (
+        {resume && resume.dur > 0 && (
           // YouTube's red bar: how far you got
           <span className="resume-bar" aria-label="Watched part">
             <span style={{ width: `${Math.min(100, (resume.pos / resume.dur) * 100)}%` }} />

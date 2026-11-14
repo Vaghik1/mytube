@@ -167,3 +167,22 @@ describe('Play on TV button (phone)', () => {
     delete (window as any).YT;
   });
 });
+
+describe('opening a video after its preview', () => {
+  it('starts where the preview got to', async () => {
+    const { savePreviewPos } = await import('../src/history');
+    savePreviewPos('prev1', 87.6, 600);
+    const made: any[] = [];
+    (window as any).YT = { Player: class { constructor(_e: unknown, o: any) { made.push(o); } destroy() {} } };
+    render(
+      <MemoryRouter initialEntries={['/watch/prev1']}>
+        <Routes>
+          <Route path="/watch/:id" element={<Watch />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(made).toHaveLength(1));
+    expect(made[0].playerVars.start).toBe(88);
+    delete (window as any).YT;
+  });
+});

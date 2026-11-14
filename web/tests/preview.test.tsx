@@ -3,7 +3,8 @@ import { act, cleanup, render } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Video } from '../src/api';
-import { PREVIEW_MAX_MS, Preview, REVEAL_AFTER_MS } from '../src/components/Preview';
+import { Preview, REVEAL_AFTER_MS } from '../src/components/Preview';
+import { seenIds, startPoint } from '../src/history';
 import { VideoCard } from '../src/components/VideoCard';
 import { defaultSettings, saveSettings } from '../src/config';
 import { SCROLL_IDLE_MS, getPreview, pickPreviewCard, setPreview, startPreviews } from '../src/preview';
@@ -238,16 +239,47 @@ describe('the preview player', () => {
     expect(b.container.querySelector('.preview')).toBeNull();
   });
 
-  it('stops after a minute and cleans up when you move on', async () => {
+  it('keeps playing (no time limit) and remembers where it got to when you move on', async () => {
     const players = installFakePlayer();
     const view = render(<Preview id="long" />);
     await act(async () => void (await vi.advanceTimersByTimeAsync(10)));
+    const p = players[0];
+    act(() => p.emit(1));
+    p.time = 50;
+    await act(async () => void (await vi.advanceTimersByTimeAsync(5 * 60_000))); // five minutes
+    expect(p.calls).not.toContain('stop');
+    expect(view.container.querySelector('.preview')).not.toBeNull();
+    p.time = 312;
+    view.unmount(); // scrolled away
+    expect(p.destroyed).toBe(true);
+    expect(startPoint('long')).toEqual({ pos: 312, dur: 600 });
+    // …and it isn't "watched": it still shows up in suggestions
+    expect(seenIds().has('long')).toBe(false);
+  });
+
+  it('the next preview of the same video continues from there', async () => {
+    const players = installFakePlayer();
+    const a = render(<Preview id="again" />);
+    await act(async () => void (await vi.advanceTimersByTimeAsync(10)));
     act(() => players[0].emit(1));
-    await act(async () => void (await vi.advanceTimersByTimeAsync(PREVIEW_MAX_MS)));
-    expect(players[0].calls).toContain('stop');
-    expect(view.container.querySelector('.preview')).toBeNull();
-    view.unmount();
-    expect(players[0].destroyed).toBe(true);
+    await act(async () => void (await vi.advanceTimersByTimeAsync(500)));
+    players[0].time = 140;
+    a.unmount();
+    render(<Preview id="again" />);
+    await act(async () => void (await vi.advanceTimersByTimeAsync(10)));
+    expect(players[1].opts.playerVars.start).toBe(140);
+  });
+
+  it('played to the end: forgets the spot, so it starts fresh next time', async () => {
+    const players = installFakePlayer();
+    const v = render(<Preview id="short" />);
+    await act(async () => void (await vi.advanceTimersByTimeAsync(10)));
+    act(() => players[0].emit(1));
+    players[0].time = 30;
+    await act(async () => void (await vi.advanceTimersByTimeAsync(2500)));
+    act(() => players[0].emit(0));
+    v.unmount();
+    expect(startPoint('short')).toBeNull();
   });
 });
 

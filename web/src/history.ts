@@ -187,6 +187,61 @@ export function continueWatching(now = Date.now()): Watch[] {
     .sort((a, b) => b.at - a.at);
 }
 
+// ── Where a muted preview got to ──
+// Kept apart from watch history: a preview playing as you browse isn't "watching" it, so it never
+// hides videos or teaches For you anything. It only remembers the spot, so the preview — and the
+// video when you open it — carry on from there.
+const PREVIEW_KEY = 'mytube.previewPos';
+const PREVIEW_KEEP_MS = 7 * 86400_000;
+type PreviewPos = { pos: number; dur: number; at: number };
+function loadPreviewPos(): Record<string, PreviewPos> {
+  try {
+    return JSON.parse(localStorage.getItem(PREVIEW_KEY) || '{}');
+  } catch {
+    return {};
+  }
+}
+function savePreviewMap(m: Record<string, PreviewPos>) {
+  const now = Date.now();
+  const kept = Object.entries(m)
+    .filter(([, p]) => now - p.at < PREVIEW_KEEP_MS)
+    .sort((a, b) => b[1].at - a[1].at)
+    .slice(0, 300);
+  try {
+    localStorage.setItem(PREVIEW_KEY, JSON.stringify(Object.fromEntries(kept)));
+  } catch {
+    /* ignore */
+  }
+}
+/** A preview reached `pos` seconds (of `dur`). */
+export function savePreviewPos(id: string, pos: number, dur: number) {
+  if (!id || !(pos > 0)) return;
+  const m = loadPreviewPos();
+  m[id] = { pos: Math.round(pos), dur: Math.round(dur || 0), at: Date.now() };
+  savePreviewMap(m);
+}
+/** A preview played to the end (or is no longer needed). */
+export function clearPreviewPos(id: string) {
+  const m = loadPreviewPos();
+  if (m[id]) {
+    delete m[id];
+    savePreviewMap(m);
+  }
+}
+
+/**
+ * Where to start this video, and where its red bar ends: the most recent of where you stopped
+ * watching it and where its preview got to. Null for new or finished videos.
+ */
+export function startPoint(id: string): { pos: number; dur: number } | null {
+  const w = loadHistory().find((x) => x.id === id);
+  const p = loadPreviewPos()[id];
+  const fresh = p && Date.now() - p.at < PREVIEW_KEEP_MS && p.pos >= 5 && (!p.dur || p.pos < p.dur - 10) ? p : null;
+  if (w?.skip) return null;
+  if (fresh && (!w || fresh.at > w.at)) return { pos: fresh.pos, dur: fresh.dur || w?.dur || 0 };
+  return resumePoint(id);
+}
+
 /** Where you stopped in a video you haven't finished (for the red bar and resuming), or null. */
 export function resumePoint(id: string): { pos: number; dur: number } | null {
   const w = loadHistory().find((x) => x.id === id);

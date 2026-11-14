@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { loadYTApi } from '../yt';
+import { clearPreviewPos, savePreviewPos, startPoint } from '../history';
 
-export const PREVIEW_MAX_MS = 60_000;
+/** How often a playing preview remembers where it is. */
+export const SAVE_EVERY_MS = 2000;
 /**
  * YouTube shows its title, a big pause button and logos when a player starts, and hides them
  * by itself after about 2–3 seconds of playing. The thumbnail stays up until then.
@@ -16,7 +18,8 @@ const NUDGE_EVERY_MS = 1000;
 /**
  * A muted, control-less YouTube player laid over a thumbnail, with subtitles when the video has them.
  * It stays invisible until it has actually played for a moment, so you never see a black box,
- * an "unavailable" message or YouTube's start-up overlays; it stops after a minute.
+ * an "unavailable" message or YouTube's start-up overlays. It plays to the end, and remembers
+ * where it got to: the next preview of this video — and the video itself — continue from there.
  */
 export function Preview({ id }: { id: string }) {
   const holder = useRef<HTMLDivElement>(null);
@@ -29,14 +32,18 @@ export function Preview({ id }: { id: string }) {
     let ready = false;
     let playedMs = 0;
     let sinceNudge = 0;
-    const stop = window.setTimeout(() => {
-      setDone(true);
+    let sinceSave = 0;
+    const from = startPoint(id);
+    let ended = false;
+    const remember = () => {
+      if (ended) return;
       try {
-        player?.stopVideo?.();
+        const t = player?.getCurrentTime?.();
+        if (playedMs > 0 && t > 0) savePreviewPos(id, t, player.getDuration?.() || 0);
       } catch {
         /* ignore */
       }
-    }, PREVIEW_MAX_MS);
+    };
 
     // Count only time actually spent playing (short buffering pauses don't start the wait over),
     // and if the player is stuck before starting, ask it to play again.
@@ -46,6 +53,11 @@ export function Preview({ id }: { id: string }) {
       if (state === 1) {
         playedMs += TICK_MS;
         if (playedMs >= REVEAL_AFTER_MS) setPlaying(true);
+        sinceSave += TICK_MS;
+        if (sinceSave >= SAVE_EVERY_MS) {
+          sinceSave = 0;
+          remember();
+        }
       } else if (playedMs === 0 && state !== 3) {
         sinceNudge += TICK_MS;
         if (sinceNudge >= NUDGE_EVERY_MS) {
@@ -78,6 +90,7 @@ export function Preview({ id }: { id: string }) {
         height: '100%',
         playerVars: {
           autoplay: 1,
+          ...(from ? { start: Math.floor(from.pos) } : {}),
           mute: 1,
           controls: 0,
           disablekb: 1,
@@ -99,7 +112,11 @@ export function Preview({ id }: { id: string }) {
           onApiChange: subtitlesOn,
           onStateChange: (e: any) => {
             if (e.data === 1 && playedMs === 0) subtitlesOn();
-            if (e.data === 0) setDone(true);
+            if (e.data === 0) {
+              ended = true;
+              clearPreviewPos(id); // played to the end
+              setDone(true);
+            }
           },
           onError: () => setDone(true),
         },
@@ -107,8 +124,8 @@ export function Preview({ id }: { id: string }) {
     });
     return () => {
       gone = true;
-      window.clearTimeout(stop);
       window.clearInterval(tick);
+      remember(); // scrolled away: keep the spot
       try {
         player?.destroy?.();
       } catch {

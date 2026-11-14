@@ -4,7 +4,7 @@ import { getChannelVideos, getForYou, getRating, getVideo, getVideos, rate, type
 import { loadSettings } from '../config';
 import { CATEGORY_LABEL, getBranding, getSkipSegments, segmentAt, type Segment } from '../community';
 import { loadYTApi } from '../yt';
-import { markLiked, notInterested, recordWatch, resumePoint, seenIds, startedWatching } from '../history';
+import { clearPreviewPos, markLiked, notInterested, recordWatch, seenIds, startPoint, startedWatching } from '../history';
 import { dismissPick } from '../agent';
 import { SubscribeButton } from './Channel';
 import type { Queue } from '../components/VideoCard';
@@ -121,8 +121,8 @@ export function Watch() {
           // Pick up where you left off (like YouTube).
           ...(startAt !== undefined
             ? { start: Math.floor(startAt) }
-            : resumePoint(id)
-              ? { start: Math.floor(resumePoint(id)!.pos) }
+            : startPoint(id)
+              ? { start: Math.floor(startPoint(id)!.pos) }
               : {}),
           // TV: our own remote-friendly controls. Phone: YouTube's normal tap controls.
           controls: isTouch ? 1 : 0,
@@ -180,7 +180,7 @@ export function Watch() {
     setRating('none');
     showOsd();
     if (ready) {
-      const r = startAt !== undefined ? { pos: startAt } : resumePoint(id);
+      const r = startAt !== undefined ? { pos: startAt } : startPoint(id);
       player.current?.loadVideoById(r ? { videoId: id, startSeconds: Math.floor(r.pos) } : id);
     }
     getVideo(id).then(setVideo).catch(() => {});
@@ -252,6 +252,7 @@ export function Watch() {
         // Ended: count as finished even if YouTube reports a time just short of the end.
         const pos = p?.getPlayerState?.() === 0 ? videoRef.current.duration : p?.getCurrentTime?.();
         recordWatch(videoRef.current, watched.current, pos);
+        if (watched.current >= 3) clearPreviewPos(videoRef.current.id); // the watch position is newer now
         syncSoon(); // let the other device know
       }
     };
