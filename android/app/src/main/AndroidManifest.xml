@@ -6,14 +6,7 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <uses-feature android:name="android.software.leanback" android:required="false" />
-    <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
-    <!-- Voice search: lets MyTube see that a speech recognizer (Google) is installed. -->
-    <queries>
-        <intent>
-            <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
-        </intent>
-    </queries>
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
     <application

@@ -37,12 +37,6 @@ export function App() {
     return () => window.clearInterval(t);
   }, [signedIn]);
 
-  // The remote's search / microphone key opens voice search.
-  useEffect(() => {
-    (window as any).__mytubeVoiceKey = () => navigate('/search?voice=1');
-    return () => void delete (window as any).__mytubeVoiceKey;
-  }, [navigate]);
-
   // Same watch history on the TV and the phone.
   useEffect(() => (signedIn ? startHistorySync() : undefined), [signedIn]);
 

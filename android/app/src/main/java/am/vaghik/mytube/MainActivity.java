@@ -8,9 +8,6 @@ import android.content.Context;
 import android.content.IntentFilter;
 import android.content.pm.PackageInstaller;
 import android.provider.Settings;
-import android.speech.RecognizerIntent;
-import java.util.ArrayList;
-import org.json.JSONObject;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
@@ -59,7 +56,6 @@ public class MainActivity extends Activity {
     private boolean updating;
     private BroadcastReceiver installReceiver;
     private static final String INSTALL_ACTION = "am.vaghik.mytube.INSTALL_STATUS";
-    private static final int VOICE_REQUEST = 7001;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -276,12 +272,6 @@ public class MainActivity extends Activity {
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
         int code = event.getKeyCode();
-        // The remote's search / microphone key: open MyTube's voice search.
-        if (code == KeyEvent.KEYCODE_SEARCH || code == KeyEvent.KEYCODE_VOICE_ASSIST) {
-            if (event.getAction() == KeyEvent.ACTION_UP)
-                web.evaluateJavascript("window.__mytubeVoiceKey && window.__mytubeVoiceKey()", null);
-            return true;
-        }
         if (code == KeyEvent.KEYCODE_BACK || code == KeyEvent.KEYCODE_ESCAPE) {
             if (event.getAction() == KeyEvent.ACTION_UP) {
                 if (customView != null) {
@@ -322,33 +312,6 @@ public class MainActivity extends Activity {
             pendingUpdateUrl = null;
             startUpdate(url);
         }
-    }
-
-    // ── Voice search ─────────────────────────────────────────────
-
-    private Intent voiceIntent() {
-        return new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-                .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_WEB_SEARCH)
-                .putExtra(RecognizerIntent.EXTRA_PROMPT, "Search MyTube")
-                .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
-    }
-
-    private void voiceResult(String text) {
-        String arg = text == null ? "null" : JSONObject.quote(text);
-        web.evaluateJavascript("window.__mytubeVoice && window.__mytubeVoice(" + arg + ")", null);
-    }
-
-    @Override
-    @SuppressWarnings("deprecation")
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != VOICE_REQUEST) return;
-        String text = null;
-        if (resultCode == RESULT_OK && data != null) {
-            ArrayList<String> results = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
-            if (results != null && !results.isEmpty()) text = results.get(0);
-        }
-        voiceResult(text);
     }
 
     // ── Self-update ──────────────────────────────────────────────
@@ -488,25 +451,6 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public boolean isTv() {
             return tv;
-        }
-
-        /** True when a speech recognizer (usually Google) is available. */
-        @JavascriptInterface
-        public boolean hasVoiceSearch() {
-            return !getPackageManager().queryIntentActivities(voiceIntent(), 0).isEmpty();
-        }
-
-        /** Listen once; the words arrive in window.__mytubeVoice(text), or null if nothing was heard. */
-        @JavascriptInterface
-        @SuppressWarnings("deprecation")
-        public void startVoiceSearch() {
-            runOnUiThread(() -> {
-                try {
-                    startActivityForResult(voiceIntent(), VOICE_REQUEST);
-                } catch (ActivityNotFoundException e) {
-                    voiceResult(null);
-                }
-            });
         }
 
         /** Download the APK at this address and ask Android to install it over this app. */
