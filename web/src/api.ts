@@ -425,6 +425,90 @@ export async function channelsUploads(ids: string[], perChannel: number): Promis
   return getVideos(pages.flatMap((p: any) => (p.items || []).map((i: any) => i.contentDetails.videoId)));
 }
 
+// ── ChatGPT interests: rotating searches with a long-lived cache ──
+// A search costs 100 of the 10,000 daily quota units, so MyTube searches only a few interests
+// per half day, taking turns (never searched first, then the oldest). Every interest's results
+// are kept for a week, so the feed draws on all of them, not only the ones searched today.
+export const INTEREST_SEARCHES_PER_SLOT = 3;
+export const INTEREST_SLOT_MS = 12 * 3600_000;
+export const INTEREST_KEEP_MS = 7 * 86400_000;
+const IQ = 'mytube.iq.'; // + interest → { t, v }
+const IQ_LOG = 'mytube.iqlog'; // times of recent interest searches
+
+type IqEntry = { t: number; v: Video[] };
+const iqKey = (q: string) => IQ + q.trim().toLowerCase();
+function readIq(q: string): IqEntry | null {
+  try {
+    return JSON.parse(localStorage.getItem(iqKey(q)) || 'null');
+  } catch {
+    return null;
+  }
+}
+
+/** Which interests to search now: the budget left in this half day, never-searched first, then the oldest. */
+export function interestsToSearch(interests: string[], now = Date.now()): string[] {
+  let log: number[] = [];
+  try {
+    log = JSON.parse(localStorage.getItem(IQ_LOG) || '[]');
+  } catch {
+    /* ignore */
+  }
+  const budget = INTEREST_SEARCHES_PER_SLOT - log.filter((t) => now - t < INTEREST_SLOT_MS).length;
+  if (budget <= 0) return [];
+  return [...new Set(interests.map((q) => q.trim()).filter(Boolean))]
+    .map((q) => ({ q, t: readIq(q)?.t ?? 0 }))
+    .filter((x) => now - x.t >= INTEREST_SLOT_MS)
+    .sort((a, b) => a.t - b.t)
+    .slice(0, budget)
+    .map((x) => x.q);
+}
+
+async function interestVideos(interests: string[]): Promise<Video[]> {
+  const now = Date.now();
+  const due = interestsToSearch(interests, now);
+  if (due.length) {
+    try {
+      const log: number[] = JSON.parse(localStorage.getItem(IQ_LOG) || '[]').filter((t: number) => now - t < INTEREST_SLOT_MS);
+      localStorage.setItem(IQ_LOG, JSON.stringify([...log, ...due.map(() => now)]));
+    } catch {
+      /* ignore */
+    }
+    await Promise.all(
+      due.map((q) =>
+        search(q)
+          .then((p) => {
+            // Descriptions aren't needed in the feed: leave them out to keep storage small.
+            const v = p.items.slice(0, 20).map((x) => ({ ...x, description: '' }));
+            try {
+              localStorage.setItem(iqKey(q), JSON.stringify({ t: now, v }));
+            } catch {
+              /* storage full: ignore */
+            }
+          })
+          .catch(() => {}),
+      ),
+    );
+  }
+  // Results of every current interest that are less than a week old; forget removed interests.
+  const wanted = new Set(interests.map(iqKey));
+  const out: Video[] = [];
+  for (const k of Object.keys(localStorage).filter((k) => k.startsWith(IQ))) {
+    const e = (() => {
+      try {
+        return JSON.parse(localStorage.getItem(k) || 'null') as IqEntry | null;
+      } catch {
+        return null;
+      }
+    })();
+    if (!wanted.has(k) || !e || now - e.t > INTEREST_KEEP_MS) {
+      localStorage.removeItem(k);
+      continue;
+    }
+    out.push(...e.v);
+  }
+  return out;
+}
+
 /** Videos from ChatGPT's preferences: favourite channels' uploads and interest searches. */
 async function preferenceVideos(): Promise<{ fromChannels: Video[]; fromInterests: Video[]; favIds: string[] }> {
   const r = loadRemotePrefs();
@@ -435,12 +519,7 @@ async function preferenceVideos(): Promise<{ fromChannels: Video[]; fromInterest
     favIds.length
       ? cached(`fy.fav.${favIds.join(',')}`, 60 * 60_000, () => channelsUploads(favIds, 6)).catch(() => [] as Video[])
       : Promise.resolve([] as Video[]),
-    // Each interest search costs 100 units, so at most 3 interests, each refreshed twice a day.
-    Promise.all(
-      r.interests
-        .slice(-3)
-        .map((q) => cached(`fy.q.${q}`, 12 * 3600_000, () => search(q).then((p) => p.items)).catch(() => [] as Video[])),
-    ).then((x) => x.flat()),
+    interestVideos(r.interests),
   ]);
   return { fromChannels, fromInterests, favIds };
 }

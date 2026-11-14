@@ -1,6 +1,10 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   applyFilters,
+  clearCache,
+  INTEREST_KEEP_MS,
+  INTEREST_SLOT_MS,
+  interestsToSearch,
   chunk,
   getForYou,
   getPopular,
@@ -268,11 +272,51 @@ describe('For you', () => {
     expect(calls(f, 'search').filter((u) => u.searchParams.get('q') === 'physics')).toHaveLength(1);
   });
 
-  it('searches at most 3 interests (YouTube quota)', async () => {
+  it('searches at most 3 interests per half day (YouTube quota)', async () => {
     saveRemotePrefs({ interests: ['a1', 'b2', 'c3', 'd4', 'e5'] });
     const f = mockYouTube(subsRoutes([], {}), { '/api/picks': () => ({ picks: [] }) });
     await getForYou();
-    expect(calls(f, 'search').map((u) => u.searchParams.get('q')).sort()).toEqual(['c3', 'd4', 'e5']);
+    expect(calls(f, 'search')).toHaveLength(3);
+    clearCache('fy.'); // even when the feed is rebuilt, no more searches until the next half day
+    await getForYou();
+    expect(calls(f, 'search')).toHaveLength(3);
+  });
+
+  it('takes turns: never-searched interests first, then the oldest; all results stay in the feed for a week', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const t0 = new Date('2026-11-14T08:00:00Z').getTime();
+    vi.setSystemTime(t0);
+    signIn();
+    saveRemotePrefs({ interests: ['a1', 'b2', 'c3', 'd4', 'e5'] });
+    const routes = subsRoutes([], {});
+    routes.search = (p: URLSearchParams) => ({ items: [{ id: { videoId: `${p.get('q')}-vid` } }] });
+    const f = mockYouTube(routes, { '/api/picks': () => ({ picks: [] }) });
+    const searched = () => calls(f, 'search').map((u) => u.searchParams.get('q'));
+
+    await getForYou();
+    const first = searched();
+    expect(first).toHaveLength(3);
+
+    vi.setSystemTime(t0 + INTEREST_SLOT_MS + 1000);
+    signIn(); // the test sign-in lasts an hour
+    clearCache('fy.');
+    const ids = (await getForYou()).map((x) => x.id);
+    const second = searched().slice(3);
+    // the two never searched, then the oldest of the first round
+    expect(second).toEqual(expect.arrayContaining(['a1', 'b2', 'c3', 'd4', 'e5'].filter((q) => !first.includes(q))));
+    expect(second).toHaveLength(3);
+    // videos from all five interests are in the feed now
+    expect(ids).toEqual(expect.arrayContaining(['a1-vid', 'b2-vid', 'c3-vid', 'd4-vid', 'e5-vid']));
+    expect(interestsToSearch(['a1', 'b2', 'c3', 'd4', 'e5'])).toEqual([]); // budget used up
+
+    // removed interests are forgotten; results older than a week are dropped
+    saveRemotePrefs({ interests: ['a1'] });
+    vi.setSystemTime(t0 + INTEREST_KEEP_MS + INTEREST_SLOT_MS + 2000);
+    signIn();
+    clearCache('fy.');
+    const later = (await getForYou()).map((x) => x.id);
+    expect(later).not.toContain('b2-vid');
+    vi.useRealTimers();
   });
 
   it('still works when the assistant hub is down', async () => {
