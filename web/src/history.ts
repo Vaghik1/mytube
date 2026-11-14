@@ -15,6 +15,7 @@ export type Watch = {
   at: number; // last watched (ms)
   liked?: boolean;
   skip?: boolean; // "Not interested"
+  opens?: number; // times you started it (played at least a few seconds)
 };
 
 const KEY = 'mytube.history';
@@ -68,6 +69,13 @@ export function recordWatch(v: Video, sec: number) {
   upsert(v, { sec: Math.max(prev?.sec || 0, Math.round(sec)), skip: false });
 }
 
+/** Called once each time you start a video (after a few seconds of playing). */
+export function startedWatching(v: Video) {
+  if (!v?.id) return;
+  const prev = loadHistory().find((w) => w.id === v.id);
+  upsert(v, { opens: (prev?.opens || 0) + 1, skip: false });
+}
+
 export function markLiked(v: Video, liked: boolean) {
   upsert(v, { liked });
 }
@@ -91,12 +99,32 @@ function weight(w: Watch, now = Date.now()): number {
   return s * decay;
 }
 
-export function isSeen(w: Watch) {
-  return w.skip || w.sec >= Math.min(90, (w.dur || 120) * 0.5);
+/** You watched a real part of it: half, or 90 seconds of anything longer than 3 minutes. */
+export function watchedEnough(w: Watch) {
+  return w.sec >= Math.min(90, (w.dur || 120) * 0.5);
+}
+
+/** A video you started but left early stays out of suggestions for this long… */
+export const PARTIAL_COOLDOWN_MS = 3 * 86400_000;
+/** …and after this many starts without watching enough, it's not suggested again. */
+export const MAX_PARTIAL_OPENS = 2;
+
+/**
+ * Should this video stay out of suggestions?
+ *  • "Not interested", or you watched a real part of it: never suggested again.
+ *  • Started but left early: hidden for 3 days, then it may come back once.
+ *    Started a second time and left early again: never suggested again.
+ */
+export function isSeen(w: Watch, now = Date.now()) {
+  if (w.skip || watchedEnough(w)) return true;
+  if ((w.opens || 0) >= MAX_PARTIAL_OPENS) return true;
+  if (w.sec >= 3 && now - w.at < PARTIAL_COOLDOWN_MS) return true;
+  return false;
 }
 
 export function seenIds(): Set<string> {
-  return new Set(loadHistory().filter(isSeen).map((w) => w.id));
+  const now = Date.now();
+  return new Set(loadHistory().filter((w) => isSeen(w, now)).map((w) => w.id));
 }
 
 // ── topics ─────────────────────────────────────────────────

@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getChannelVideos, getForYou, getRating, getVideo, getVideos, rate, type Video } from '../api';
 import { loadSettings } from '../config';
 import { loadYTApi } from '../yt';
-import { markLiked, notInterested, recordWatch } from '../history';
+import { markLiked, notInterested, recordWatch, seenIds, startedWatching } from '../history';
 import { dismissPick } from '../agent';
 import { SubscribeButton } from './Channel';
 import type { Queue } from '../components/VideoCard';
@@ -31,7 +31,7 @@ export async function relatedVideos(video: Video): Promise<Video[]> {
     getChannelVideos(video.channelId).then((p) => p.items).catch(() => [] as Video[]),
     getForYou().catch(() => [] as Video[]),
   ]);
-  const seen = new Set([video.id]);
+  const seen = new Set([video.id, ...seenIds()]);
   const out: Video[] = [];
   const add = (v: Video) => {
     if (seen.has(v.id)) return;
@@ -175,6 +175,7 @@ export function Watch() {
   videoRef.current = video;
   const watched = useRef(0);
   const lastSaved = useRef(0);
+  const started = useRef(false);
   useEffect(() => {
     const t = window.setInterval(() => {
       const p = player.current;
@@ -182,6 +183,10 @@ export function Watch() {
       setTime({ cur: p.getCurrentTime() || 0, dur: p.getDuration() || 0 });
       if (p.getPlayerState?.() === 1) {
         watched.current += 0.5;
+        if (videoRef.current && !started.current && watched.current >= 3) {
+          started.current = true;
+          startedWatching(videoRef.current);
+        }
         if (videoRef.current && watched.current - lastSaved.current >= 15) {
           lastSaved.current = watched.current;
           recordWatch(videoRef.current, watched.current);
@@ -194,6 +199,7 @@ export function Watch() {
   useEffect(() => {
     watched.current = 0;
     lastSaved.current = 0;
+    started.current = false;
     return () => {
       if (videoRef.current) recordWatch(videoRef.current, watched.current);
     };

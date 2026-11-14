@@ -10,6 +10,8 @@ import {
   recordWatch,
   seedQuery,
   seenIds,
+  startedWatching,
+  PARTIAL_COOLDOWN_MS,
   tokens,
 } from '../src/history';
 
@@ -155,5 +157,45 @@ describe('top topics are real topics, not hype words', () => {
     const terms = buildProfile().terms.map((t) => t.term);
     expect(terms).not.toContain('just');
     expect(terms).not.toContain('something');
+  });
+});
+
+describe("don't suggest videos you've already watched", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('watched a real part of it (half, or 90s of a long video): never suggested again', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const long = vid('long', 'c', 'Chess lecture', 1800);
+    startedWatching(long);
+    recordWatch(long, 95);
+    vi.setSystemTime(Date.now() + 365 * 86400_000);
+    expect(seenIds().has('long')).toBe(true);
+  });
+
+  it('left early: hidden for 3 days, then it may come back once', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const v = vid('peek', 'c', 'Chess lecture', 1800);
+    startedWatching(v);
+    recordWatch(v, 20);
+    expect(seenIds().has('peek')).toBe(true);
+    vi.setSystemTime(Date.now() + PARTIAL_COOLDOWN_MS + 1000);
+    expect(seenIds().has('peek')).toBe(false);
+  });
+
+  it('left early a second time: not suggested again', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const v = vid('twice', 'c', 'Chess lecture', 1800);
+    startedWatching(v);
+    recordWatch(v, 20);
+    vi.setSystemTime(Date.now() + PARTIAL_COOLDOWN_MS + 1000);
+    startedWatching(v);
+    recordWatch(v, 15);
+    vi.setSystemTime(Date.now() + 30 * 86400_000);
+    expect(seenIds().has('twice')).toBe(true);
+  });
+
+  it('opened but not really played (under 3 seconds): still suggested', () => {
+    recordWatch(vid('blip', 'c', 'Chess lecture', 1800), 2);
+    expect(seenIds().has('blip')).toBe(false);
   });
 });
