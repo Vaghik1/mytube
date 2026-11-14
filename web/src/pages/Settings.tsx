@@ -5,6 +5,38 @@ import { loadRemotePrefs, defaultSettings, loadSettings, saveSettings, type Sett
 import { android } from '../tv';
 import { buildProfile, clearHistory } from '../history';
 import { resetAssistantPrefs } from '../agent';
+import { canSelfUpdate, checkForUpdate, installUpdate, installedVersion, useUpdate } from '../update';
+
+function AppUpdates() {
+  const u = useUpdate();
+  if (installedVersion() === null) return null;
+  const line =
+    u.status === 'checking' ? 'Checking…'
+    : u.status === 'none' ? 'You have the latest version.'
+    : u.status === 'available' ? `Version 1.${u.update!.version} is available.`
+    : u.status === 'downloading' ? `Downloading… ${Math.round(u.progress || 0)}%`
+    : u.status === 'permission' ? 'Allow MyTube to install apps, then come back.'
+    : u.status === 'confirm' ? 'Confirm the install on screen.'
+    : u.status === 'error' ? `Couldn't update: ${u.error}`
+    : '';
+  return (
+    <>
+      <h2 className="section-title">App updates</h2>
+      {line && <p className="muted update-line">{line}</p>}
+      <div className="chips wrap">
+        {u.status === 'available' && canSelfUpdate() ? (
+          <button className="chip focusable active" onClick={installUpdate}>
+            Update now
+          </button>
+        ) : (
+          <button className="chip focusable" onClick={() => checkForUpdate()}>
+            Check for updates
+          </button>
+        )}
+      </div>
+    </>
+  );
+}
 
 export function Settings() {
   const [s, setS] = useState<S>(loadSettings);
@@ -96,6 +128,8 @@ export function Settings() {
           </button>
         </div>
       )}
+
+      <AppUpdates />
 
       <h2 className="section-title">Account</h2>
       <div className="chips wrap">

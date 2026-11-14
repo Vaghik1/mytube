@@ -180,7 +180,14 @@ export function initTV(): () => void {
 
 // ── Android app bridge (present only inside the TV app) ─────────
 
-type Bridge = { openInYouTube(id: string): void; exitApp(): void; appVersion?(): string; isTv?(): boolean };
+export type Bridge = {
+  openInYouTube(id: string): void;
+  exitApp(): void;
+  appVersion?(): string;
+  isTv?(): boolean;
+  /** Newer apps: download this APK and ask Android to install it (progress via window.__mytubeUpdate). */
+  installUpdate?(url: string): void;
+};
 export const android: Bridge | undefined = (window as any).MyTubeAndroid;
 const hasTouch = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
 /** Running inside the MyTube app on a TV (remote control). The same app on a phone is not a TV. */

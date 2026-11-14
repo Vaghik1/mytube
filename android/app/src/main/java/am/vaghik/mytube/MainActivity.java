@@ -1,7 +1,17 @@
 package am.vaghik.mytube;
 
 import android.app.Activity;
+import android.app.PendingIntent;
 import android.app.UiModeManager;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.IntentFilter;
+import android.content.pm.PackageInstaller;
+import android.provider.Settings;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import android.content.res.Configuration;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
@@ -41,6 +51,11 @@ public class MainActivity extends Activity {
     private boolean tv;
     /** Safe-area insets in CSS pixels: top, right, bottom, left. */
     private final float[] safe = new float[4];
+    /** Update waiting for the "install unknown apps" permission. */
+    private String pendingUpdateUrl;
+    private boolean updating;
+    private BroadcastReceiver installReceiver;
+    private static final String INSTALL_ACTION = "am.vaghik.mytube.INSTALL_STATUS";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -291,10 +306,125 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         web.onResume();
+        // Back from the "install unknown apps" screen: continue the update if it's allowed now.
+        if (pendingUpdateUrl != null && canInstall()) {
+            String url = pendingUpdateUrl;
+            pendingUpdateUrl = null;
+            startUpdate(url);
+        }
+    }
+
+    // ── Self-update ──────────────────────────────────────────────
+
+    private void updateStatus(String status, String value) {
+        String v = value == null ? "null" : "'" + value.replace("\\", "\\\\").replace("'", "\\'").replace("\n", " ") + "'";
+        runOnUiThread(() -> web.evaluateJavascript(
+                "window.__mytubeUpdate && window.__mytubeUpdate('" + status + "', " + v + ")", null));
+    }
+
+    private boolean canInstall() {
+        return Build.VERSION.SDK_INT < 26 || getPackageManager().canRequestPackageInstalls();
+    }
+
+    private void startUpdate(String url) {
+        if (updating) return;
+        if (!url.startsWith("https://github.com/") && !url.startsWith("https://objects.githubusercontent.com/")) {
+            updateStatus("error", "Unexpected download address");
+            return;
+        }
+        if (!canInstall()) {
+            pendingUpdateUrl = url;
+            updateStatus("permission", null);
+            try {
+                startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:" + getPackageName())));
+            } catch (ActivityNotFoundException e) {
+                pendingUpdateUrl = null;
+                updateStatus("error", "Turn on Install unknown apps for MyTube in Android settings");
+            }
+            return;
+        }
+        updating = true;
+        new Thread(() -> {
+            PackageInstaller.Session session = null;
+            try {
+                PackageInstaller installer = getPackageManager().getPackageInstaller();
+                PackageInstaller.SessionParams params =
+                        new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
+                params.setAppPackageName(getPackageName());
+                if (Build.VERSION.SDK_INT >= 31) {
+                    // Once MyTube installed itself, Android may let later updates through without asking.
+                    params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED);
+                }
+                int id = installer.createSession(params);
+                session = installer.openSession(id);
+
+                HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+                conn.setInstanceFollowRedirects(true);
+                conn.setConnectTimeout(15000);
+                conn.setReadTimeout(30000);
+                if (conn.getResponseCode() != 200) throw new Exception("Download failed (" + conn.getResponseCode() + ")");
+                long total = conn.getContentLengthLong();
+                try (InputStream in = conn.getInputStream();
+                     OutputStream out = session.openWrite("mytube.apk", 0, total > 0 ? total : -1)) {
+                    byte[] buf = new byte[64 * 1024];
+                    long done = 0;
+                    int lastPct = -1, n;
+                    while ((n = in.read(buf)) > 0) {
+                        out.write(buf, 0, n);
+                        done += n;
+                        int pct = total > 0 ? (int) (done * 100 / total) : 0;
+                        if (pct != lastPct) {
+                            lastPct = pct;
+                            updateStatus("downloading", String.valueOf(pct));
+                        }
+                    }
+                    session.fsync(out);
+                }
+                runOnUiThread(this::registerInstallReceiver);
+                Intent status = new Intent(INSTALL_ACTION).setPackage(getPackageName());
+                int flags = PendingIntent.FLAG_UPDATE_CURRENT
+                        | (Build.VERSION.SDK_INT >= 31 ? PendingIntent.FLAG_MUTABLE : 0);
+                PendingIntent pi = PendingIntent.getBroadcast(this, id, status, flags);
+                session.commit(pi.getIntentSender());
+                session.close();
+            } catch (Exception e) {
+                if (session != null) session.abandon();
+                updating = false;
+                updateStatus("error", e.getMessage() == null ? "Update failed" : e.getMessage());
+            }
+        }).start();
+    }
+
+    @SuppressWarnings("deprecation")
+    private void registerInstallReceiver() {
+        if (installReceiver != null) return;
+        installReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                int st = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE);
+                if (st == PackageInstaller.STATUS_PENDING_USER_ACTION) {
+                    Intent confirm = intent.getParcelableExtra(Intent.EXTRA_INTENT);
+                    if (confirm != null) {
+                        updateStatus("confirm", null);
+                        startActivity(confirm);
+                    }
+                    return;
+                }
+                updating = false;
+                if (st == PackageInstaller.STATUS_SUCCESS) return; // Android restarts MyTube on the new version
+                if (st == PackageInstaller.STATUS_FAILURE_ABORTED) updateStatus("cancelled", null);
+                else updateStatus("error", intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE));
+            }
+        };
+        IntentFilter filter = new IntentFilter(INSTALL_ACTION);
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(installReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        else registerReceiver(installReceiver, filter);
     }
 
     @Override
     protected void onDestroy() {
+        if (installReceiver != null) unregisterReceiver(installReceiver);
         web.destroy();
         super.onDestroy();
     }
@@ -321,6 +451,12 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public boolean isTv() {
             return tv;
+        }
+
+        /** Download the APK at this address and ask Android to install it over this app. */
+        @JavascriptInterface
+        public void installUpdate(String url) {
+            runOnUiThread(() -> startUpdate(url));
         }
 
         @JavascriptInterface

@@ -5,6 +5,7 @@ import { syncProfile } from './agent';
 import { startPreviews } from './preview';
 import { Sidebar } from './components/Sidebar';
 import { PhoneChrome } from './components/PhoneChrome';
+import { UpdateBanner } from './components/UpdateBanner';
 import { Channel } from './pages/Channel';
 import { Home } from './pages/Home';
 import { Library, Playlist } from './pages/Library';
@@ -56,6 +57,7 @@ export function App() {
           <Route path="*" element={<Home />} />
         </Routes>
       </main>
+      <UpdateBanner />
     </div>
   );
 }
