@@ -27,6 +27,9 @@ export function Settings() {
         <button className={`chip focusable${s.autoplayNext ? ' active' : ''}`} onClick={() => update({ autoplayNext: !s.autoplayNext })}>
           Autoplay next: {s.autoplayNext ? 'On' : 'Off'}
         </button>
+        <button className={`chip focusable${s.previewOnBrowse ? ' active' : ''}`} onClick={() => update({ previewOnBrowse: !s.previewOnBrowse })}>
+          Previews while browsing: {s.previewOnBrowse ? 'On' : 'Off'}
+        </button>
       </div>
 
       {(s.blockedChannels.length > 0 || s.blockedKeywords.length > 0) && (

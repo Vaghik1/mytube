@@ -69,7 +69,10 @@ main::-webkit-scrollbar { display: none; }
 .thumb { position: relative; aspect-ratio: 16 / 9; border-radius: 1rem; overflow: hidden; background: var(--panel); }
 .thumb img { width: 100%; height: 100%; object-fit: cover; }
 .thumb-placeholder { display: grid; place-items: center; height: 100%; font-size: 5rem; background: linear-gradient(135deg, #3a0010, #200040); }
-.badge { position: absolute; right: .6rem; bottom: .6rem; background: #000c; padding: .2rem .6rem; border-radius: .5rem; font-size: 1.2rem; font-weight: 500; }
+.preview { position: absolute; inset: 0; opacity: 0; transition: opacity .4s ease; pointer-events: none; background: #000; }
+.preview.playing { opacity: 1; }
+.preview iframe { width: 100%; height: 100%; border: 0; pointer-events: none; }
+.badge { z-index: 1; position: absolute; right: .6rem; bottom: .6rem; background: #000c; padding: .2rem .6rem; border-radius: .5rem; font-size: 1.2rem; font-weight: 500; }
 .badge.live { background: #cc0000; }
 .badge.soon { background: #1f4fbf; }
 .card-title { margin-top: 1rem; font-size: 1.55rem; font-weight: 500; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }

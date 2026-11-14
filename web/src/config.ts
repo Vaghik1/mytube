@@ -17,6 +17,8 @@ export type Settings = {
   feedChannelLimit: number;
   /** Play the next video in the list automatically when one ends. */
   autoplayNext: boolean;
+  /** Play a muted preview of the video you stop on while browsing. */
+  previewOnBrowse: boolean;
 };
 
 export const defaultSettings: Settings = {
@@ -26,6 +28,7 @@ export const defaultSettings: Settings = {
   blockedKeywords: [],
   feedChannelLimit: 50,
   autoplayNext: true,
+  previewOnBrowse: true,
 };
 
 export const REGIONS: [string, string][] = [

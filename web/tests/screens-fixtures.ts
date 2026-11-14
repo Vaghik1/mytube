@@ -46,13 +46,19 @@ export function installFakePlayer() {
       queueMicrotask(() => opts.events?.onReady?.({ target: this }));
     }
     playVideo() { this.calls.push('play'); this.state = 1; }
+    mute() { this.calls.push('mute'); }
+    stopVideo() { this.calls.push('stop'); }
+    /** Test helper: pretend YouTube reported a state change (1 playing, 0 ended). */
+    emit(state: number) { this.state = state; this.opts.events?.onStateChange?.({ data: state, target: this }); }
+    fail(code = 150) { this.opts.events?.onError?.({ data: code, target: this }); }
     pauseVideo() { this.calls.push('pause'); this.state = 2; }
     seekTo(t: number) { this.calls.push(`seek:${t}`); this.time = t; }
     loadVideoById(id: string) { this.calls.push(`load:${id}`); }
     getPlayerState() { return this.state; }
     getCurrentTime() { return this.time; }
     getDuration() { return 600; }
-    destroy() {}
+    destroyed = false;
+    destroy() { this.destroyed = true; }
   }
   (window as any).YT = { Player: FakePlayer };
   return players;

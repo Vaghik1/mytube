@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Route, Routes, useLocation } from 'react-router-dom';
 import { isSignedIn, onAuthChange } from './auth';
 import { syncProfile } from './agent';
+import { startPreviews } from './preview';
 import { Sidebar } from './components/Sidebar';
 import { Channel } from './pages/Channel';
 import { Home } from './pages/Home';
@@ -16,6 +17,10 @@ export function App() {
   const [signedIn, setSignedIn] = useState(isSignedIn);
   const { pathname } = useLocation();
   useEffect(() => onAuthChange(() => setSignedIn(isSignedIn())), []);
+  // Muted previews while browsing lists (not on the player page).
+  const onPlayer = pathname.startsWith('/watch/');
+  useEffect(() => (signedIn && !onPlayer ? startPreviews() : undefined), [signedIn, onPlayer]);
+
   // Share the taste profile with the assistant hub now and then.
   useEffect(() => {
     if (!signedIn) return;

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getChannelVideos, getRating, getVideo, getVideos, rate, type Video } from '../api';
 import { loadSettings } from '../config';
+import { loadYTApi } from '../yt';
 import { markLiked, notInterested, recordWatch } from '../history';
 import { dismissPick } from '../agent';
 import { SubscribeButton } from './Channel';
@@ -10,26 +11,6 @@ import { VideoGrid } from '../components/VideoGrid';
 import { focusFirst, isTouch, openInYouTube, pushBackHandler, pushKeyHandler } from '../tv';
 import { fmtCount, fmtDuration, timeAgo } from '../util';
 
-declare global {
-  interface Window {
-    YT: any;
-    onYouTubeIframeAPIReady?: () => void;
-  }
-}
-
-let apiPromise: Promise<void> | null = null;
-function loadYTApi(): Promise<void> {
-  if (window.YT?.Player) return Promise.resolve();
-  if (!apiPromise) {
-    apiPromise = new Promise((resolve) => {
-      window.onYouTubeIframeAPIReady = () => resolve();
-      const s = document.createElement('script');
-      s.src = 'https://www.youtube.com/iframe_api';
-      document.head.appendChild(s);
-    });
-  }
-  return apiPromise;
-}
 
 const ERRORS: Record<number, string> = {
   2: 'This video link is invalid.',
