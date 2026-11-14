@@ -215,3 +215,23 @@ describe('phone status bar and top bar (like YouTube)', () => {
     expect(computed(['.topbar'], 'position', 390)).toBe('sticky');
   });
 });
+
+describe('phone player page', () => {
+  it('the video is sized by the screen width (16:9), never by the page height', () => {
+    expect(computed(['.player', '.watch.web .player'], 'height', 390)).toBe('auto');
+    expect(computed(['.player', '.watch.web .player'], 'aspect-ratio', 390)).toBe('16 / 9');
+    expect(computed(['.player', '.watch.web .player'], 'width', 390)).toMatch(/^min\(calc\(100%/);
+  });
+
+  it('long links in the description wrap instead of widening the page', () => {
+    expect(computed(['.description', '.watch.web .description'], 'overflow-wrap', 390)).toBe('anywhere');
+  });
+});
+
+describe('preview player', () => {
+  it("is cropped so YouTube's title bar and logos fall outside the card", () => {
+    expect(computed(['.preview'], 'overflow', 390)).toBe('hidden');
+    expect(computed(['.preview iframe'], 'height', 390)).toBe('200%');
+    expect(computed(['.preview iframe'], 'top', 390)).toBe('-50%');
+  });
+});

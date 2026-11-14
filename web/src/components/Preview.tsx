@@ -2,11 +2,15 @@ import { useEffect, useRef, useState } from 'react';
 import { loadYTApi } from '../yt';
 
 export const PREVIEW_MAX_MS = 60_000;
+/** YouTube shows a title, a big play/pause button and logos for the first moments: wait them out. */
+export const REVEAL_AFTER_MS = 2500;
 
 /**
  * A muted, control-less YouTube player laid over a thumbnail.
- * It stays invisible until the video is really playing, so you never see
- * a black box or an "unavailable" message, and it stops after a minute.
+ * It stays invisible until the video has been playing for a moment, so you never see
+ * a black box, an "unavailable" message or YouTube's start-up overlays; it stops after a minute.
+ * The player is twice as tall as the thumbnail (video centred), so YouTube's title bar
+ * and corner logo land outside the visible area.
  */
 export function Preview({ id }: { id: string }) {
   const holder = useRef<HTMLDivElement>(null);
@@ -16,6 +20,7 @@ export function Preview({ id }: { id: string }) {
   useEffect(() => {
     let player: any;
     let gone = false;
+    let reveal = 0;
     const stop = window.setTimeout(() => {
       setDone(true);
       try {
@@ -50,7 +55,12 @@ export function Preview({ id }: { id: string }) {
             e.target.playVideo();
           },
           onStateChange: (e: any) => {
-            if (e.data === 1) setPlaying(true);
+            if (e.data === 1) {
+              if (!reveal) reveal = window.setTimeout(() => setPlaying(true), REVEAL_AFTER_MS);
+            } else if (e.data !== 1) {
+              window.clearTimeout(reveal); // buffering or paused: wait again before showing
+              reveal = 0;
+            }
             if (e.data === 0) setDone(true);
           },
           onError: () => setDone(true),
@@ -60,6 +70,7 @@ export function Preview({ id }: { id: string }) {
     return () => {
       gone = true;
       window.clearTimeout(stop);
+      window.clearTimeout(reveal);
       try {
         player?.destroy?.();
       } catch {

@@ -3,10 +3,10 @@ import { act, cleanup, render } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Video } from '../src/api';
-import { PREVIEW_MAX_MS, Preview } from '../src/components/Preview';
+import { PREVIEW_MAX_MS, Preview, REVEAL_AFTER_MS } from '../src/components/Preview';
 import { VideoCard } from '../src/components/VideoCard';
 import { defaultSettings, saveSettings } from '../src/config';
-import { SCROLL_IDLE_MS, getPreview, pickCentered, setPreview, startPreviews } from '../src/preview';
+import { SCROLL_IDLE_MS, getPreview, pickPreviewCard, setPreview, startPreviews } from '../src/preview';
 import { isTouch } from '../src/tv';
 import { installFakePlayer } from './screens-fixtures';
 
@@ -42,11 +42,35 @@ afterEach(() => {
 describe('choosing what to preview on a phone', () => {
   it('runs in touch mode', () => expect(isTouch).toBe(true));
 
-  it('picks the fully visible card nearest the middle of the screen', () => {
+  it('picks the top-most fully visible card, so the first video of a list plays', () => {
     card('top', 0);
     card('middle', 300);
     card('cut-off', 700); // only 100 of 200px visible
-    expect(pickCentered()).toBe('middle');
+    expect(pickPreviewCard()).toBe('top');
+  });
+
+  it('skips a card that is mostly scrolled off the top', () => {
+    card('gone', -150); // only 50 of 200px visible
+    card('next', 100);
+    expect(pickPreviewCard()).toBe('next');
+  });
+
+  it("does not count what's hidden under the top bar or the tab bar", () => {
+    const rect = (top: number, height: number) => () =>
+      ({ top, bottom: top + height, height, left: 0, right: 400, width: 400, x: 0, y: top, toJSON() {} }) as DOMRect;
+    const bar = document.createElement('header');
+    bar.className = 'topbar';
+    bar.getBoundingClientRect = rect(0, 100);
+    const tabs = document.createElement('nav');
+    tabs.className = 'sidebar';
+    tabs.getBoundingClientRect = rect(VH - 80, 80);
+    document.body.append(bar, tabs);
+    card('under-bar', 0); // half under the top bar
+    card('ok', 320);
+    card('under-tabs', 600); // bottom 80px under the tab bar
+    expect(pickPreviewCard()).toBe('ok');
+    bar.classList.add('hidden'); // top bar slid away: the first card is fully visible again
+    expect(pickPreviewCard()).toBe('under-bar');
   });
 
   it('waits until scrolling stops, and stops the preview while scrolling', () => {
@@ -128,6 +152,25 @@ describe('the preview player', () => {
     expect(p.calls).toContain('mute');
     expect(container.querySelector('.preview')!.className).not.toContain('playing');
     act(() => p.emit(1));
+    // YouTube's start-up title / big pause button are still on screen: keep the thumbnail.
+    await act(async () => void (await vi.advanceTimersByTimeAsync(REVEAL_AFTER_MS - 100)));
+    expect(container.querySelector('.preview')!.className).not.toContain('playing');
+    await act(async () => void (await vi.advanceTimersByTimeAsync(200)));
+    expect(container.querySelector('.preview')!.className).toContain('playing');
+  });
+
+  it('waits again if the video stalls before it is shown', async () => {
+    const players = installFakePlayer();
+    const { container } = render(<Preview id="v1" />);
+    await act(async () => void (await vi.advanceTimersByTimeAsync(10)));
+    const p = players[0];
+    act(() => p.emit(1));
+    await act(async () => void (await vi.advanceTimersByTimeAsync(REVEAL_AFTER_MS - 500)));
+    act(() => p.emit(3)); // buffering
+    act(() => p.emit(1));
+    await act(async () => void (await vi.advanceTimersByTimeAsync(REVEAL_AFTER_MS - 500)));
+    expect(container.querySelector('.preview')!.className).not.toContain('playing');
+    await act(async () => void (await vi.advanceTimersByTimeAsync(600)));
     expect(container.querySelector('.preview')!.className).toContain('playing');
   });
 
