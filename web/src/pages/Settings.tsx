@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { clearCache } from '../api';
 import { signOut } from '../auth';
 import { loadRemotePrefs, defaultSettings, loadSettings, saveSettings, type Settings as S } from '../config';
-import { android } from '../tv';
+import { android, isTouch } from '../tv';
 import { buildProfile, clearHistory } from '../history';
 import { resetAssistantPrefs } from '../agent';
 import { clearHistoryEverywhere } from '../historySync';
@@ -63,6 +63,11 @@ export function Settings() {
         <button className={`chip focusable${s.previewOnBrowse ? ' active' : ''}`} onClick={() => update({ previewOnBrowse: !s.previewOnBrowse })}>
           Previews while browsing: {s.previewOnBrowse ? 'On' : 'Off'}
         </button>
+        {isTouch && (
+          <button className={`chip focusable${s.zoomPreviews ? ' active' : ''}`} onClick={() => update({ zoomPreviews: !s.zoomPreviews })}>
+            Enlarge previews: {s.zoomPreviews ? 'On' : 'Off'}
+          </button>
+        )}
         <button className={`chip focusable${s.skipSponsors ? ' active' : ''}`} onClick={() => update({ skipSponsors: !s.skipSponsors })}>
           Skip sponsors: {s.skipSponsors ? 'On' : 'Off'}
         </button>

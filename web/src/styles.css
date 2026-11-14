@@ -305,3 +305,11 @@ html.touch .sub-main:focus { background: none; box-shadow: none; }
   background: #000c; color: #fff; border-radius: 1rem; padding: .8rem 1.4rem; font-size: 1.5rem; pointer-events: none;
 }
 @media (max-width: 820px) { .skip-notice { top: calc(var(--safe-top) + 1rem); right: calc(var(--safe-right) + 1rem); font-size: 1.3rem; } }
+
+/* Phone: a preview that has started grows into the middle of the screen; everything else dims.
+   Tap the video to open it, tap or swipe outside to close. */
+.zoom-backdrop { position: fixed; inset: 0; z-index: 55; background: #000c; animation: zoom-fade .25s ease; }
+@keyframes zoom-fade { from { opacity: 0; } to { opacity: 1; } }
+.card.zoom-host, .card.zoom-host:focus { position: static; z-index: auto; transform: none; } /* only the video rises above the dimming */
+.thumb { transition: transform .3s ease; }
+.thumb.zoomed { z-index: 60; border-radius: 0; box-shadow: 0 1rem 4rem #000; }

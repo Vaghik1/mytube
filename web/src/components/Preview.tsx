@@ -21,10 +21,15 @@ const NUDGE_EVERY_MS = 1000;
  * an "unavailable" message or YouTube's start-up overlays. It plays to the end, and remembers
  * where it got to: the next preview of this video — and the video itself — continue from there.
  */
-export function Preview({ id }: { id: string }) {
+export function Preview({ id, onReveal }: { id: string; onReveal?: () => void }) {
   const holder = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(false);
   const [done, setDone] = useState(false);
+  const revealRef = useRef(onReveal);
+  revealRef.current = onReveal;
+  useEffect(() => {
+    if (playing) revealRef.current?.();
+  }, [playing]);
 
   useEffect(() => {
     let player: any;

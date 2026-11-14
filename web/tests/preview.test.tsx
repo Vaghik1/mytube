@@ -1,5 +1,5 @@
 // Muted previews while browsing — phone behaviour (touch). TV is in preview-tv.test.tsx.
-import { act, cleanup, render } from '@testing-library/react';
+import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Video } from '../src/api';
@@ -300,5 +300,61 @@ describe('red progress bar on thumbnails', () => {
     const bars = container.querySelectorAll('.resume-bar > span');
     expect(bars).toHaveLength(1);
     expect((bars[0] as HTMLElement).style.width).toBe('25%');
+  });
+});
+
+describe('enlarged preview on the phone', () => {
+  const base: Video = {
+    id: 'z1', title: 'Chess', channelId: 'c', channelTitle: 'C', publishedAt: new Date().toISOString(),
+    thumb: '', duration: 600, views: 1, likes: 0, live: false, description: '',
+  };
+  const mount = () => {
+    installFakePlayer();
+    return render(
+      <MemoryRouter>
+        <VideoCard v={base} />
+      </MemoryRouter>,
+    );
+  };
+  const reveal = async () => {
+    act(() => setPreview('z1'));
+    await act(async () => void (await vi.advanceTimersByTimeAsync(REVEAL_AFTER_MS + 300)));
+  };
+
+  it('moves to the middle of the screen, as wide as it fits', async () => {
+    const { zoomTransform } = await import('../src/components/VideoCard');
+    // a 360×202 thumbnail at the top of a 390×844 phone screen
+    expect(zoomTransform({ left: 15, top: 60, width: 360, height: 202 }, 390, 844)).toBe('translate(0px, 261px) scale(1.083)');
+  });
+
+  it('once the preview is playing, it is enlarged and everything else is dimmed', async () => {
+    const { container } = mount();
+    await reveal();
+    expect(container.querySelector('.thumb')!.className).toContain('zoomed');
+    expect(document.querySelector('.zoom-backdrop')).toBeTruthy();
+  });
+
+  it('tapping outside closes it (without opening the video) and it stays small after that', async () => {
+    const { container } = mount();
+    await reveal();
+    fireEvent.click(document.querySelector('.zoom-backdrop')!);
+    expect(document.querySelector('.zoom-backdrop')).toBeNull();
+    expect(container.querySelector('.thumb')!.className).not.toContain('zoomed');
+    expect(container.querySelector('.preview')).toBeTruthy(); // still playing, small
+  });
+
+  it('a swipe outside closes it too', async () => {
+    mount();
+    await reveal();
+    fireEvent.touchMove(document.querySelector('.zoom-backdrop')!);
+    expect(document.querySelector('.zoom-backdrop')).toBeNull();
+  });
+
+  it('can be turned off in Settings', async () => {
+    saveSettings({ ...defaultSettings, zoomPreviews: false });
+    const { container } = mount();
+    await reveal();
+    expect(container.querySelector('.preview')).toBeTruthy();
+    expect(document.querySelector('.zoom-backdrop')).toBeNull();
   });
 });

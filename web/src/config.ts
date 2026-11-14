@@ -21,6 +21,8 @@ export type Settings = {
   skipSponsors: boolean;
   /** Community-written titles and thumbnails instead of clickbait (DeArrow). */
   betterTitles: boolean;
+  /** Phone: when a preview starts, enlarge it to the middle of the screen and dim the rest. */
+  zoomPreviews: boolean;
   /** Play a muted preview of the video you stop on while browsing. */
   previewOnBrowse: boolean;
 };
@@ -35,6 +37,7 @@ export const defaultSettings: Settings = {
   previewOnBrowse: true,
   skipSponsors: true,
   betterTitles: true,
+  zoomPreviews: true,
 };
 
 export const REGIONS: [string, string][] = [
