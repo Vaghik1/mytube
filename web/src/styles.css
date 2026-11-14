@@ -238,7 +238,16 @@ html.touch .card:active { opacity: .7; }
 .watch.web .details { position: static; background: none; overflow: visible; }
 .watch.web .details-inner { padding: 1.4rem calc(1.2rem + var(--safe-right)) calc(4rem + var(--safe-bottom)) calc(1.2rem + var(--safe-left)); }
 .watch.web .details h1 { font-size: 2rem; }
-.watch.web .description { max-height: none; font-size: 1.35rem; overflow-wrap: anywhere; }
+/* Buttons in one row you can swipe sideways, like YouTube */
+.watch.web .row.actions { flex-wrap: nowrap; overflow-x: auto; margin: 1.2rem calc(-1.2rem - var(--safe-right)) 1.2rem calc(-1.2rem - var(--safe-left)); padding: 0 calc(1.2rem + var(--safe-right)) 0 calc(1.2rem + var(--safe-left)); scrollbar-width: none; }
+.watch.web .row.actions::-webkit-scrollbar { display: none; }
+.watch.web .row.actions .btn { flex-shrink: 0; }
+/* Description: a tappable box with two lines; the videos follow right after */
+.desc-box { display: flex; flex-direction: column; align-items: flex-start; gap: .4rem; width: 100%; text-align: left; background: var(--panel-2); border-radius: 1.2rem; padding: 1.1rem 1.3rem; margin: 0 0 1.6rem; color: var(--text); }
+.desc-meta { font-size: 1.35rem; font-weight: 500; }
+.watch.web .desc-box .description { max-height: none; font-size: 1.35rem; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+.watch.web .desc-box.open .description { display: block; -webkit-line-clamp: none; line-clamp: none; }
+.desc-more { font-size: 1.35rem; font-weight: 500; }
 @media (min-width: 821px) {
   html.touch .watch.web .details-inner { max-width: 120rem; margin: 0 auto; }
 }

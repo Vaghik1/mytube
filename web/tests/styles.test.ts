@@ -230,7 +230,7 @@ describe('phone player page', () => {
   });
 
   it('long links in the description wrap instead of widening the page', () => {
-    expect(computed(['.description', '.watch.web .description'], 'overflow-wrap', 390)).toBe('anywhere');
+    expect(computed(['.description', '.watch.web .desc-box .description'], 'overflow-wrap', 390)).toBe('anywhere');
   });
 });
 

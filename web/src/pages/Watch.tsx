@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { getChannelVideos, getRating, getVideo, getVideos, rate, type Video } from '../api';
+import { getChannelVideos, getForYou, getRating, getVideo, getVideos, rate, type Video } from '../api';
 import { loadSettings } from '../config';
 import { loadYTApi } from '../yt';
 import { markLiked, notInterested, recordWatch } from '../history';
@@ -23,6 +23,27 @@ const ERRORS: Record<number, string> = {
 
 type Mode = 'player' | 'details';
 
+export const SAME_CHANNEL_COUNT = 4;
+
+/** Videos to show under a video opened on its own: a few from the channel, then For you. */
+export async function relatedVideos(video: Video): Promise<Video[]> {
+  const [channel, forYou] = await Promise.all([
+    getChannelVideos(video.channelId).then((p) => p.items).catch(() => [] as Video[]),
+    getForYou().catch(() => [] as Video[]),
+  ]);
+  const seen = new Set([video.id]);
+  const out: Video[] = [];
+  const add = (v: Video) => {
+    if (seen.has(v.id)) return;
+    seen.add(v.id);
+    out.push(v);
+  };
+  channel.slice(0, SAME_CHANNEL_COUNT + 1).forEach(add);
+  forYou.forEach(add);
+  channel.slice(SAME_CHANNEL_COUNT + 1).forEach(add);
+  return out.slice(0, 40);
+}
+
 export function Watch() {
   const { id = '' } = useParams();
   const nav = useNavigate();
@@ -40,6 +61,7 @@ export function Watch() {
   const [error, setError] = useState<number | null>(null);
   const [rating, setRating] = useState<'like' | 'dislike' | 'none'>('none');
   const [upNext, setUpNext] = useState<Video[]>([]);
+  const [descOpen, setDescOpen] = useState(false);
   const osdTimer = useRef<number>(0);
 
   const modeRef = useRef(mode);
@@ -132,13 +154,15 @@ export function Watch() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  // "Up next": the rest of the list you came from, otherwise more from this channel.
+  // "Up next": the rest of the list you came from. Otherwise, like YouTube, a few more from this
+  // channel followed by your For you feed.
   useEffect(() => {
     if (!video) return;
     let alive = true;
+    setDescOpen(false);
     const load = queue && nextIndex >= 0
       ? getVideos(queue.ids.slice(nextIndex, nextIndex + 24))
-      : getChannelVideos(video.channelId).then((p) => p.items.filter((v) => v.id !== video.id));
+      : relatedVideos(video);
     load.then((v) => alive && setUpNext(v)).catch(() => {});
     return () => {
       alive = false;
@@ -300,10 +324,12 @@ export function Watch() {
         <div className="details" data-focus-trap>
           <div className="details-inner">
             <h1>{video?.title}</h1>
-            <div className="card-meta">
-              {video && `${fmtCount(video.views)} views • ${timeAgo(video.publishedAt)}`}
-            </div>
-            <div className="row">
+            {!isTouch && (
+              <div className="card-meta">
+                {video && `${fmtCount(video.views)} views • ${timeAgo(video.publishedAt)}`}
+              </div>
+            )}
+            <div className="row actions">
               {!isTouch && (
                 <button className="btn focusable" data-autofocus onClick={() => setMode('player')}>
                   ▲ Back to video
@@ -337,10 +363,23 @@ export function Watch() {
                 </button>
               )}
             </div>
-            {video?.description && <p className="description">{video.description.slice(0, 700)}</p>}
+            {isTouch ? (
+              video && (
+                // Like YouTube: a small box with views and two lines of description; tap for the rest.
+                <button className={`desc-box${descOpen ? ' open' : ''}`} onClick={() => setDescOpen(!descOpen)}>
+                  <span className="desc-meta">
+                    {fmtCount(video.views)} views • {timeAgo(video.publishedAt)}
+                  </span>
+                  {video.description && <span className="description">{video.description}</span>}
+                  {video.description && <span className="desc-more">{descOpen ? 'Show less' : '…more'}</span>}
+                </button>
+              )
+            ) : (
+              video?.description && <p className="description">{video.description.slice(0, 700)}</p>
+            )}
             {upNext.length > 0 && (
               <>
-                <h2 className="section-title">{queue && nextIndex >= 0 ? 'Up next' : `More from ${video?.channelTitle}`}</h2>
+                <h2 className="section-title">{queue && nextIndex >= 0 ? 'Up next' : isTouch ? 'Up next' : `More from ${video?.channelTitle}`}</h2>
                 <VideoGrid videos={upNext} title="Up next" />
               </>
             )}
