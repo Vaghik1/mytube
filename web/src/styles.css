@@ -216,15 +216,22 @@ html.touch .card:active { opacity: .7; }
 
 /* ── Phone player: normal page with the video on top ──────── */
 .watch.web { position: fixed; inset: 0; overflow-y: auto; background: var(--bg); -webkit-overflow-scrolling: touch; }
-.watch.web .watch-top { position: sticky; top: 0; z-index: 5; padding: calc(.8rem + var(--safe-top)) calc(1.2rem + var(--safe-right)) .8rem calc(1.2rem + var(--safe-left)); background: var(--bg); }
+/* Like YouTube: no Back button (Android's back gesture/button goes back); the video sits right under
+   a black status bar and stays pinned at the top while you scroll the details (portrait). */
+.watch.web { padding-top: var(--safe-top); }
+.watch.web::before { content: ''; position: fixed; top: 0; left: 0; right: 0; height: var(--safe-top); background: #000; z-index: 6; }
 /* Width decides the size (16:9 below it). Never taller than 75% of the screen: then it gets narrower and centred. */
 .watch.web .player {
   position: relative; inset: auto; height: auto; aspect-ratio: 16 / 9; background: #000; pointer-events: auto;
   width: min(calc(100% - var(--safe-left) - var(--safe-right)), calc(75vh * 16 / 9)); margin: 0 auto;
 }
 /* Phone on its side: the video takes the whole height under the Back bar */
+@media (orientation: portrait) {
+  /* sticky offsets count from inside the padding, which already clears the status bar */
+  .watch.web .player { position: sticky; top: 0; z-index: 5; }
+}
 @media (orientation: landscape) and (max-height: 520px) {
-  .watch.web .player { width: min(calc(100% - var(--safe-left) - var(--safe-right)), calc((100vh - 5.6rem - var(--safe-top)) * 16 / 9)); }
+  .watch.web .player { width: min(calc(100% - var(--safe-left) - var(--safe-right)), calc((100vh - var(--safe-top)) * 16 / 9)); }
 }
 .watch.web .player iframe { pointer-events: auto; }
 .watch.web .player-error { position: relative; inset: auto; padding: 2rem 1.4rem; font-size: 1.5rem; background: var(--panel); }

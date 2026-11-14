@@ -224,7 +224,8 @@ export function Watch() {
       return false;
     });
     const offBack = pushBackHandler(() => {
-      if (modeRef.current === 'details') {
+      // TV: Back first closes the details panel. Phones go straight back (Android back gesture).
+      if (!isTouch && modeRef.current === 'details') {
         setMode('player');
         showOsd();
         return true;
@@ -255,13 +256,6 @@ export function Watch() {
 
   return (
     <div className={`watch${isTouch ? ' web' : ''}`}>
-      {isTouch && (
-        <div className="watch-top">
-          <button className="btn" onClick={() => (window.history.length > 1 ? nav(-1) : nav('/'))}>
-            ← Back
-          </button>
-        </div>
-      )}
       <div className="player" ref={holder} />
 
       {!isTouch && mode === 'player' && !error && (osd || !playing) && (

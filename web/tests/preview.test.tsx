@@ -42,14 +42,41 @@ afterEach(() => {
 describe('choosing what to preview on a phone', () => {
   it('runs in touch mode', () => expect(isTouch).toBe(true));
 
-  it('picks the top-most fully visible card, so the first video of a list plays', () => {
+  /** The page scrolls inside <main>: pretend it is scrolled to `y` of `max`. */
+  function scrolledTo(y: number, max = 2000) {
+    const main = document.createElement('main');
+    Object.defineProperty(main, 'scrollTop', { value: y, configurable: true });
+    Object.defineProperty(main, 'scrollHeight', { value: max + VH, configurable: true });
+    Object.defineProperty(main, 'clientHeight', { value: VH, configurable: true });
+    document.body.appendChild(main);
+  }
+
+  it('at the top of a list, the first video plays (it can never reach the middle)', () => {
+    scrolledTo(0);
     card('top', 0);
     card('middle', 300);
     card('cut-off', 700); // only 100 of 200px visible
     expect(pickPreviewCard()).toBe('top');
   });
 
+  it('once scrolled, the fully visible card nearest the middle of the screen plays', () => {
+    scrolledTo(500);
+    card('top', 0);
+    card('middle', 300);
+    card('cut-off', 700);
+    expect(pickPreviewCard()).toBe('middle');
+  });
+
+  it('at the very bottom, the last video plays', () => {
+    scrolledTo(2000, 2000);
+    card('a', 100);
+    card('middle', 300);
+    card('last', 580);
+    expect(pickPreviewCard()).toBe('last');
+  });
+
   it('skips a card that is mostly scrolled off the top', () => {
+    scrolledTo(0);
     card('gone', -150); // only 50 of 200px visible
     card('next', 100);
     expect(pickPreviewCard()).toBe('next');
@@ -65,6 +92,7 @@ describe('choosing what to preview on a phone', () => {
     tabs.className = 'sidebar';
     tabs.getBoundingClientRect = rect(VH - 80, 80);
     document.body.append(bar, tabs);
+    document.body.prepend(Object.assign(document.createElement('main')));
     card('under-bar', 0); // half under the top bar
     card('ok', 320);
     card('under-tabs', 600); // bottom 80px under the tab bar

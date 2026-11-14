@@ -45,7 +45,7 @@ describe('on a phone', () => {
     delete (window as any).YT;
   });
 
-  it('player page has a Back button and shows details right away', async () => {
+  it('player page has no Back button (Android back goes back) and shows details right away', async () => {
     mockYouTube(liveRoutes(), { '/api/picks': () => ({ picks: [] }) });
     render(
       <MemoryRouter initialEntries={['/watch/live1']}>
@@ -54,7 +54,7 @@ describe('on a phone', () => {
         </Routes>
       </MemoryRouter>,
     );
-    expect(screen.getByText('← Back')).toBeTruthy();
+    expect(screen.queryByText('← Back')).toBeNull();
     expect(await screen.findByText('Big tournament – round 5')).toBeTruthy();
     expect(screen.getByText('Not interested')).toBeTruthy();
     expect(screen.queryByText('▲ Back to video')).toBeNull(); // TV-only button

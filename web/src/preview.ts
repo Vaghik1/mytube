@@ -1,5 +1,7 @@
 // Decides which video plays a muted preview while you browse (like YouTube's home feed).
-//  • Phone: when scrolling stops, the top-most fully visible card (like YouTube).
+//  • Phone: when scrolling stops, the card nearest the middle of the screen (like YouTube).
+//    At the very top of a list the first card can't reach the middle, so it plays instead
+//    (and likewise the last card at the very bottom).
 //  • TV: the card the remote has rested on for a moment.
 import { useSyncExternalStore } from 'react';
 import { loadSettings } from './config';
@@ -46,17 +48,30 @@ function viewArea() {
   return { top, bottom };
 }
 
-/** The top-most card whose thumbnail is (almost) fully on screen. */
+/** How far the list is scrolled: at the top, at the bottom, or in between. */
+function scrollEdge(): 'top' | 'bottom' | null {
+  const sc = document.querySelector<HTMLElement>('main') || (document.scrollingElement as HTMLElement | null);
+  if (!sc) return 'top';
+  if (sc.scrollTop <= 8) return 'top';
+  const scrollable = sc.scrollHeight - sc.clientHeight;
+  if (scrollable > 0 && scrollable - sc.scrollTop <= 8) return 'bottom';
+  return null;
+}
+
+/** Which card should preview now (see the rules at the top of this file). */
 export function pickPreviewCard(): string | null {
   const { top, bottom } = viewArea();
-  let best: { id: string; y: number } | null = null;
+  const mid = (top + bottom) / 2;
+  const edge = scrollEdge();
+  let best: { id: string; score: number } | null = null;
   for (const el of document.querySelectorAll<HTMLElement>('[data-video-id]')) {
     const thumb = el.querySelector<HTMLElement>('.thumb') || el;
     const r = thumb.getBoundingClientRect();
     if (r.height === 0) continue;
     const visible = Math.min(r.bottom, bottom) - Math.max(r.top, top);
     if (visible < r.height * 0.75) continue;
-    if (!best || r.top < best.y) best = { id: el.dataset.videoId!, y: r.top };
+    const score = edge === 'top' ? r.top : edge === 'bottom' ? -r.top : Math.abs((r.top + r.bottom) / 2 - mid);
+    if (!best || score < best.score) best = { id: el.dataset.videoId!, score };
   }
   return best?.id ?? null;
 }

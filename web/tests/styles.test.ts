@@ -172,8 +172,8 @@ describe('notch / status bar / navigation bar (safe areas)', () => {
     for (const sel of [['.sidebar'], ['.sidebar:focus-within']]) expect(computed(sel, 'padding', 390)).toContain('var(--safe-bottom)');
   });
 
-  it('the phone player Back button and the sign-in screen avoid the notch', () => {
-    expect(computed(['.watch.web .watch-top'], 'padding', 390)).toContain('var(--safe-top)');
+  it('the phone player and the sign-in screen avoid the notch', () => {
+    expect(computed(['.watch.web'], 'padding-top', 390)).toBe('var(--safe-top)');
     expect(computed(['.login'], 'padding', 390)).toContain('var(--safe-top)');
   });
 
@@ -221,6 +221,12 @@ describe('phone player page', () => {
     expect(computed(['.player', '.watch.web .player'], 'height', 390)).toBe('auto');
     expect(computed(['.player', '.watch.web .player'], 'aspect-ratio', 390)).toBe('16 / 9');
     expect(computed(['.player', '.watch.web .player'], 'width', 390)).toMatch(/^min\(calc\(100%/);
+  });
+
+  it('no Back bar: the video sits under a black status bar and stays pinned while scrolling (portrait)', () => {
+    expect(computed(['.watch.web'], 'padding-top', 390)).toBe('var(--safe-top)');
+    expect(computed(['.watch.web::before'], 'height', 390)).toBe('var(--safe-top)');
+    expect(computed(['.watch.web::before'], 'background', 390)).toBe('#000');
   });
 
   it('long links in the description wrap instead of widening the page', () => {
