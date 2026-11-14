@@ -57,7 +57,8 @@ public class MainActivity extends Activity {
         setContentView(root);
 
         tv = isTvDevice();
-        if (!tv) setupEdgeToEdge();
+        if (tv) getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        else setupEdgeToEdge();
 
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
@@ -160,6 +161,8 @@ public class MainActivity extends Activity {
             w.setDecorFitsSystemWindows(false);
             WindowInsetsController c = w.getInsetsController();
             if (c != null) {
+                // Keep Android's own clock, battery and notification icons visible.
+                c.show(WindowInsets.Type.systemBars());
                 // Dark app: light status/navigation icons.
                 c.setSystemBarsAppearance(0, WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
                         | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS);
@@ -169,6 +172,7 @@ public class MainActivity extends Activity {
                     | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
                     | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
         }
+        if (Build.VERSION.SDK_INT >= 21) w.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
         if (Build.VERSION.SDK_INT < 35) {
             w.setStatusBarColor(Color.TRANSPARENT);
             w.setNavigationBarColor(Color.TRANSPARENT);
