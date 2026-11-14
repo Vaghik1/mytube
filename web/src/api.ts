@@ -37,6 +37,8 @@ export type Channel = {
   description?: string;
   uploads?: string;
   banner?: string;
+  /** Your subscription's id (needed to unsubscribe). */
+  subId?: string;
 };
 
 export type Playlist = { id: string; title: string; thumb: string; count: number };
@@ -260,6 +262,7 @@ export async function getSubscriptions(max = 200): Promise<Channel[]> {
       });
       (data.items || []).forEach((s: any) =>
         out.push({
+          subId: s.id,
           id: s.snippet.resourceId.channelId,
           title: s.snippet.title,
           thumb: bestThumb(s.snippet.thumbnails),
@@ -546,5 +549,55 @@ export async function resolveChannelId(input: string): Promise<string | undefine
   return cached(`handle.${handle.toLowerCase()}`, 7 * 86400_000, async () => {
     const data = await yt('channels', { part: 'id', forHandle: `@${handle}` });
     return data.items?.[0]?.id as string | undefined;
+  });
+}
+
+// ── subscriptions management ───────────────────────────────
+
+/** All your subscriptions (up to 1000), for the Subscriptions page. Fresh from YouTube each time. */
+export async function listAllSubscriptions(): Promise<Channel[]> {
+  const out: Channel[] = [];
+  let pageToken: string | undefined;
+  do {
+    const data = await yt('subscriptions', { part: 'snippet', mine: true, order: 'relevance', maxResults: 50, pageToken });
+    for (const s of data.items || [])
+      out.push({
+        subId: s.id,
+        id: s.snippet.resourceId.channelId,
+        title: s.snippet.title,
+        thumb: bestThumb(s.snippet.thumbnails),
+      });
+    pageToken = data.nextPageToken;
+  } while (pageToken && out.length < 1000);
+  return out;
+}
+
+/** Find channels by name (100 units), with subscriber counts. */
+export async function searchChannels(q: string): Promise<Channel[]> {
+  const data = await yt('search', { part: 'snippet', type: 'channel', q, maxResults: 12 });
+  const ids: string[] = (data.items || []).map((i: any) => i.id?.channelId || i.snippet?.channelId).filter(Boolean);
+  if (!ids.length) return [];
+  const det = await yt('channels', { part: 'snippet,statistics', id: ids.join(',') });
+  const map = new Map<string, Channel>(
+    (det.items || []).map((c: any) => [
+      c.id,
+      {
+        id: c.id,
+        title: c.snippet.title,
+        thumb: bestThumb(c.snippet.thumbnails),
+        subscribers: Number(c.statistics?.subscriberCount || 0),
+        videoCount: Number(c.statistics?.videoCount || 0),
+      },
+    ]),
+  );
+  return ids.map((id) => map.get(id)).filter(Boolean) as Channel[];
+}
+
+/** A channel's most viewed videos (search ordered by views; 100 units per page, cached 6h). */
+export async function getChannelPopular(channelId: string, pageToken?: string): Promise<Page<Video>> {
+  return cached(`popular.${channelId}.${pageToken || ''}`, 6 * 3600_000, async () => {
+    const data = await yt('search', { part: 'snippet', type: 'video', channelId, order: 'viewCount', maxResults: 24, pageToken });
+    const ids = (data.items || []).map((i: any) => i.id?.videoId);
+    return { items: applyFilters(await getVideos(ids)), next: data.nextPageToken as string | undefined };
   });
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { getChannel, getChannelVideos, isSubscribed, subscribe, unsubscribe, type Channel as Ch } from '../api';
+import { getChannel, getChannelPopular, getChannelVideos, isSubscribed, subscribe, unsubscribe, type Channel as Ch } from '../api';
 import { PagedGrid } from '../components/VideoGrid';
 import { fmtCount } from '../util';
 
@@ -38,6 +38,7 @@ export function SubscribeButton({ channelId }: { channelId: string }) {
 export function Channel() {
   const { id = '' } = useParams();
   const [ch, setCh] = useState<Ch>();
+  const [sort, setSort] = useState<'latest' | 'popular'>('latest');
   useEffect(() => {
     getChannel(id).then(setCh).catch(() => {});
   }, [id]);
@@ -56,7 +57,24 @@ export function Channel() {
           <SubscribeButton channelId={id} />
         </div>
       )}
-      <PagedGrid load={(t) => getChannelVideos(id, t)} deps={[id]} title={ch?.title} empty="No videos" />
+      <div className="chips">
+        {(
+          [
+            ['latest', 'Latest'],
+            ['popular', 'Most popular'],
+          ] as const
+        ).map(([k, label]) => (
+          <button key={k} className={`chip focusable${sort === k ? ' active' : ''}`} onClick={() => setSort(k)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <PagedGrid
+        load={(t) => (sort === 'popular' ? getChannelPopular(id, t) : getChannelVideos(id, t))}
+        deps={[id, sort]}
+        title={ch?.title}
+        empty="No videos"
+      />
     </div>
   );
 }
