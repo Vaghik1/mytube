@@ -2,10 +2,7 @@ import { useEffect, useState } from 'react';
 import { getCategories, getForYou, getPopular, getSubscriptionFeed, type Video } from '../api';
 import { PagedGrid, Status, VideoGrid } from '../components/VideoGrid';
 import { useNavigate } from 'react-router-dom';
-import { getLiveNow, getPickVideos, getPicks, type AgentPick } from '../agent';
-import { VideoCard } from '../components/VideoCard';
-import { focusEl } from '../tv';
-import type { Video as V } from '../api';
+import { getPickVideos, getPicks, type AgentPick } from '../agent';
 
 type Chip = { id: string; title: string };
 const FIXED: Chip[] = [
@@ -52,7 +49,6 @@ export function Home({ initial = 'foryou' }: { initial?: string }) {
 
   return (
     <div className="page">
-      <LiveNow />
       <div className="chips">
         {chips.map((c) => (
           <button
@@ -110,65 +106,6 @@ function ChatGptPicks() {
         title="From ChatGPT"
         empty="No picks yet. Once ChatGPT is connected, its suggestions show up here."
       />
-    </>
-  );
-}
-
-/** Live and soon-starting streams, shown above everything else. Refreshes every 2 minutes. */
-function LiveNow() {
-  const [data, setData] = useState<{ live: V[]; soon: V[] }>({ live: [], soon: [] });
-  useEffect(() => {
-    let alive = true;
-    let first = true;
-    const load = (fresh: boolean) =>
-      getLiveNow(fresh)
-        .then((d) => {
-          if (!alive) return;
-          setData(d);
-          // On opening MyTube, jump straight to the live stream unless you've already moved.
-          if (first && (d.live.length || d.soon.length)) {
-            requestAnimationFrame(() => {
-              const a = document.activeElement;
-              if (!a || a === document.body || a.closest('.chips')) {
-                focusEl(document.querySelector<HTMLElement>('.live-row .card'));
-                document.querySelector('main')?.scrollTo({ top: 0 });
-              }
-            });
-          }
-          first = false;
-        })
-        .catch(() => {});
-    load(false);
-    const t = window.setInterval(() => load(true), 2 * 60_000);
-    return () => {
-      alive = false;
-      window.clearInterval(t);
-    };
-  }, []);
-  const { live, soon } = data;
-  if (!live.length && !soon.length) return null;
-  return (
-    <>
-      {live.length > 0 && (
-        <>
-          <h2 className="section-title live-title">● Live now</h2>
-          <div className={`live-row${live.length <= 2 ? ' big' : ''}`}>
-            {live.map((v, i) => (
-              <VideoCard key={v.id} v={v} queue={{ ids: live.map((x) => x.id), index: i }} autoFocus={i === 0} />
-            ))}
-          </div>
-        </>
-      )}
-      {soon.length > 0 && (
-        <>
-          <h2 className="section-title">Starting soon</h2>
-          <div className="live-row">
-            {soon.map((v, i) => (
-              <VideoCard key={v.id} v={v} queue={{ ids: soon.map((x) => x.id), index: i }} autoFocus={!live.length && i === 0} />
-            ))}
-          </div>
-        </>
-      )}
     </>
   );
 }

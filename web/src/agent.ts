@@ -96,7 +96,7 @@ export async function dismissPick(videoIdOrPickId: { id?: string; videoId?: stri
 let liveCache: { t: number; v: { live: Video[]; soon: Video[] } } | null = null;
 
 /**
- * Live and soon-starting streams to feature at the top of Home:
+ * Live and soon-starting streams that lead the "For you" feed:
  * channels ChatGPT asked to watch, live/upcoming video picks, and your subscriptions.
  * Only what YouTube itself reports as live is shown as live.
  */

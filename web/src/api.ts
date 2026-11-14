@@ -405,14 +405,19 @@ export async function channelsUploads(ids: string[], perChannel: number): Promis
 }
 
 export async function getForYou(): Promise<Video[]> {
-  const [feed, picks] = await Promise.all([
+  const agent = import('./agent');
+  const [feed, picks, streams] = await Promise.all([
     getLearnedFeed(),
-    import('./agent').then((m) => m.getPickVideos()).catch(() => [] as Video[]),
+    agent.then((m) => m.getPickVideos()).catch(() => [] as Video[]),
+    agent.then((m) => m.getLiveNow()).catch(() => ({ live: [] as Video[], soon: [] as Video[] })),
   ]);
-  // ChatGPT's newest picks go first, then the rest of the feed.
-  const top = applyFilters(picks).slice(0, 4);
-  const ids = new Set(top.map((v) => v.id));
-  return [...top, ...feed.filter((v) => !ids.has(v.id))];
+  // Top of the feed: streams that are live right now from channels you (or ChatGPT) follow,
+  // then ChatGPT's newest picks, then streams starting within a day, then everything else.
+  const top = [...streams.live, ...applyFilters(picks).slice(0, 4), ...streams.soon.slice(0, 3)];
+  const out: Video[] = [];
+  const ids = new Set<string>();
+  for (const v of [...top, ...feed]) if (!ids.has(v.id)) ids.add(v.id), out.push(v);
+  return out;
 }
 
 async function getLearnedFeed(): Promise<Video[]> {

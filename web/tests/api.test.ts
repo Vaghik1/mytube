@@ -211,6 +211,21 @@ describe('For you', () => {
     expect(feed[0].note).toBe('Great endgame');
   });
 
+  it('puts live streams from your subscriptions first, then ChatGPT picks', async () => {
+    const routes = subsRoutes(['a'], { a: ['a-1', 'a-live'] });
+    const videos = routes.videos;
+    routes.videos = (p: URLSearchParams) => {
+      const r = videos(p) as { items: ReturnType<typeof ytVideo>[] };
+      return { items: r.items.map((it) => (it.id === 'a-live' ? ytVideo({ id: 'a-live', channelId: 'a', live: 'live', duration: 'P0D' }) : it)) };
+    };
+    mockYouTube(routes, {
+      '/api/picks': () => ({ picks: [{ id: 'p', type: 'video', videoId: 'gpt-1', reason: 'r', status: 'new' }] }),
+    });
+    const ids = (await getForYou()).map((x) => x.id);
+    expect(ids.slice(0, 2)).toEqual(['a-live', 'gpt-1']);
+    expect(ids.filter((id) => id === 'a-live')).toHaveLength(1); // not repeated further down
+  });
+
   it('still works when the assistant hub is down', async () => {
     mockYouTube(subsRoutes(['a'], { a: ['a-1'] }), { '/api/picks': () => new Response('{}', { status: 500 }) });
     expect((await getForYou()).map((x) => x.id)).toEqual(['a-1']);

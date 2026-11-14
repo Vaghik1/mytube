@@ -47,7 +47,7 @@ describe('on a phone', () => {
     expect(document.querySelector('.watch.web')).toBeTruthy();
   });
 
-  it('Home shows Live now first when a watched channel is live', async () => {
+  it('a live stream from a watched channel leads For you (no separate Live section)', async () => {
     mockYouTube(liveRoutes(), {
       '/api/picks': () => ({ picks: [{ id: 'w', type: 'live_channel', channel: '@chess', title: 'Total Chess', status: 'new' }] }),
     });
@@ -56,10 +56,15 @@ describe('on a phone', () => {
         <Home />
       </MemoryRouter>,
     );
-    expect(await screen.findByText('● Live now')).toBeTruthy();
-    await waitFor(() => expect(screen.getAllByText('● LIVE').length).toBeGreaterThan(0));
-    const sections = [...document.querySelectorAll('.section-title, .chips')].map((e) => e.className);
-    expect(sections[0]).toContain('live-title'); // above the chips
-    expect(screen.getByText('Starting soon')).toBeTruthy();
+    await waitFor(() => expect(document.querySelectorAll('.grid .card').length).toBeGreaterThan(0));
+    const titles = [...document.querySelectorAll('.grid .card .card-title')].map((e) => e.textContent);
+    expect(titles[0]).toBe('Big tournament – round 5'); // live first
+    expect(titles).toContain('Round 6 starts soon'); // starting soon is in the feed too
+    expect(screen.getAllByText('● LIVE')).toHaveLength(1);
+    expect(screen.queryByText('● Live now')).toBeNull();
+    expect(screen.queryByText('Starting soon')).toBeNull();
+    // the replay is never labelled live
+    const replay = [...document.querySelectorAll('.grid .card')].find((c) => c.textContent?.includes('Round 4 replay'));
+    if (replay) expect(replay.textContent).not.toContain('LIVE');
   });
 });
