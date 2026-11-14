@@ -235,10 +235,10 @@ describe('phone player page', () => {
 });
 
 describe('preview player', () => {
-  it("is cropped so YouTube's title bar and logos fall outside the card", () => {
+  it('fills the card exactly, so subtitles at the bottom of the player are not cut off', () => {
     expect(computed(['.preview'], 'overflow', 390)).toBe('hidden');
-    expect(computed(['.preview iframe'], 'height', 390)).toBe('200%');
-    expect(computed(['.preview iframe'], 'top', 390)).toBe('-50%');
+    expect(computed(['.preview iframe'], 'height', 390)).toBe('100%');
+    expect(computed(['.preview iframe'], 'inset', 390)).toBe('0');
   });
 });
 

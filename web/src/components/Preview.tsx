@@ -2,15 +2,21 @@ import { useEffect, useRef, useState } from 'react';
 import { loadYTApi } from '../yt';
 
 export const PREVIEW_MAX_MS = 60_000;
-/** YouTube shows a title, a big play/pause button and logos for the first moments: wait them out. */
-export const REVEAL_AFTER_MS = 1500;
+/**
+ * YouTube shows its title, a big pause button and logos when a player starts, and hides them
+ * by itself after about 2–3 seconds of playing. The thumbnail stays up until then.
+ * (Cropping them away instead also cut off the subtitles, which sit at the very bottom.)
+ */
+export const REVEAL_AFTER_MS = 2500;
+/** How often the preview checks on the player. */
+export const TICK_MS = 250;
+/** If YouTube hasn't started playing by itself, nudge it again this often. */
+const NUDGE_EVERY_MS = 1000;
 
 /**
- * A muted, control-less YouTube player laid over a thumbnail.
- * It stays invisible until the video has been playing for a moment, so you never see
- * a black box, an "unavailable" message or YouTube's start-up overlays; it stops after a minute.
- * The player is twice as tall as the thumbnail (video centred), so YouTube's title bar
- * and corner logo land outside the visible area.
+ * A muted, control-less YouTube player laid over a thumbnail, with subtitles when the video has them.
+ * It stays invisible until it has actually played for a moment, so you never see a black box,
+ * an "unavailable" message or YouTube's start-up overlays; it stops after a minute.
  */
 export function Preview({ id }: { id: string }) {
   const holder = useRef<HTMLDivElement>(null);
@@ -20,7 +26,9 @@ export function Preview({ id }: { id: string }) {
   useEffect(() => {
     let player: any;
     let gone = false;
-    let reveal = 0;
+    let ready = false;
+    let playedMs = 0;
+    let sinceNudge = 0;
     const stop = window.setTimeout(() => {
       setDone(true);
       try {
@@ -29,6 +37,37 @@ export function Preview({ id }: { id: string }) {
         /* ignore */
       }
     }, PREVIEW_MAX_MS);
+
+    // Count only time actually spent playing (short buffering pauses don't start the wait over),
+    // and if the player is stuck before starting, ask it to play again.
+    const tick = window.setInterval(() => {
+      if (!ready || !player?.getPlayerState) return;
+      const state = player.getPlayerState();
+      if (state === 1) {
+        playedMs += TICK_MS;
+        if (playedMs >= REVEAL_AFTER_MS) setPlaying(true);
+      } else if (playedMs === 0 && state !== 3) {
+        sinceNudge += TICK_MS;
+        if (sinceNudge >= NUDGE_EVERY_MS) {
+          sinceNudge = 0;
+          try {
+            player.mute();
+            player.playVideo();
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    }, TICK_MS);
+
+    const subtitlesOn = () => {
+      try {
+        player?.setOption?.('captions', 'track', { languageCode: 'en' });
+      } catch {
+        /* the video has no subtitles */
+      }
+    };
+
     loadYTApi().then(() => {
       if (gone || !holder.current) return;
       const el = document.createElement('div');
@@ -53,21 +92,13 @@ export function Preview({ id }: { id: string }) {
         },
         events: {
           onReady: (e: any) => {
+            ready = true;
             e.target.mute();
-            try {
-              e.target.loadModule?.('captions');
-            } catch {
-              /* ignore */
-            }
             e.target.playVideo();
           },
+          onApiChange: subtitlesOn,
           onStateChange: (e: any) => {
-            if (e.data === 1) {
-              if (!reveal) reveal = window.setTimeout(() => setPlaying(true), REVEAL_AFTER_MS);
-            } else if (e.data !== 1) {
-              window.clearTimeout(reveal); // buffering or paused: wait again before showing
-              reveal = 0;
-            }
+            if (e.data === 1 && playedMs === 0) subtitlesOn();
             if (e.data === 0) setDone(true);
           },
           onError: () => setDone(true),
@@ -77,7 +108,7 @@ export function Preview({ id }: { id: string }) {
     return () => {
       gone = true;
       window.clearTimeout(stop);
-      window.clearTimeout(reveal);
+      window.clearInterval(tick);
       try {
         player?.destroy?.();
       } catch {

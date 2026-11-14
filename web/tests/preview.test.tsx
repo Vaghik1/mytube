@@ -187,19 +187,41 @@ describe('the preview player', () => {
     expect(container.querySelector('.preview')!.className).toContain('playing');
   });
 
-  it('waits again if the video stalls before it is shown', async () => {
+  it('counts only time spent playing: a buffering pause delays it but does not start the wait over', async () => {
     const players = installFakePlayer();
     const { container } = render(<Preview id="v1" />);
     await act(async () => void (await vi.advanceTimersByTimeAsync(10)));
     const p = players[0];
     act(() => p.emit(1));
-    await act(async () => void (await vi.advanceTimersByTimeAsync(REVEAL_AFTER_MS - 500)));
-    act(() => p.emit(3)); // buffering
-    act(() => p.emit(1));
-    await act(async () => void (await vi.advanceTimersByTimeAsync(REVEAL_AFTER_MS - 500)));
+    await act(async () => void (await vi.advanceTimersByTimeAsync(1500)));
+    act(() => p.emit(3)); // buffering for 2 seconds
+    await act(async () => void (await vi.advanceTimersByTimeAsync(2000)));
     expect(container.querySelector('.preview')!.className).not.toContain('playing');
-    await act(async () => void (await vi.advanceTimersByTimeAsync(600)));
+    act(() => p.emit(1));
+    await act(async () => void (await vi.advanceTimersByTimeAsync(REVEAL_AFTER_MS - 1500 + 300)));
     expect(container.querySelector('.preview')!.className).toContain('playing');
+  });
+
+  it("asks YouTube to play again if it doesn't start by itself", async () => {
+    const players = installFakePlayer();
+    render(<Preview id="v1" />);
+    await act(async () => void (await vi.advanceTimersByTimeAsync(10)));
+    const p = players[0];
+    act(() => p.emit(-1)); // unstarted
+    const before = p.calls.filter((c) => c === 'play').length;
+    await act(async () => void (await vi.advanceTimersByTimeAsync(2600)));
+    expect(p.calls.filter((c) => c === 'play').length).toBeGreaterThan(before);
+  });
+
+  it('turns English subtitles on when it starts playing', async () => {
+    const players = installFakePlayer();
+    render(<Preview id="v1" />);
+    await act(async () => void (await vi.advanceTimersByTimeAsync(10)));
+    const p = players[0] as any;
+    const opts: unknown[] = [];
+    p.setOption = (...a: unknown[]) => opts.push(a);
+    act(() => p.emit(1));
+    expect(opts).toContainEqual(['captions', 'track', { languageCode: 'en' }]);
   });
 
   it('disappears if the video cannot be embedded, or when it ends', async () => {
