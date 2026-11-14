@@ -29,6 +29,7 @@ img { display: block; }
 .layout { display: flex; height: 100%; }
 main { flex: 1; height: 100%; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
 main::-webkit-scrollbar { display: none; }
+.statusbar, .topbar { display: none; }
 .page { padding: calc(2.4rem + var(--safe-top)) calc(3.2rem + var(--safe-right)) calc(6rem + var(--safe-bottom)) 2.4rem; }
 
 /* Sidebar: icons only, expands while focused */
@@ -140,7 +141,32 @@ main::-webkit-scrollbar { display: none; }
   body { font-size: 1.5rem; }
   .layout { flex-direction: column; }
   main { width: 100%; }
-  .page { padding: calc(1.4rem + var(--safe-top)) calc(1.2rem + var(--safe-right)) calc(8rem + var(--safe-bottom)) calc(1.2rem + var(--safe-left)); }
+
+  /* Status bar strip: solid at the top, translucent tint once content scrolls under it */
+  .statusbar {
+    display: block; position: fixed; top: 0; left: 0; right: 0; height: var(--safe-top); z-index: 40;
+    background: var(--bg); transition: background-color .25s ease;
+  }
+  .statusbar.scrolled {
+    background: rgba(15, 15, 15, .72);
+    -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  }
+  /* Top bar with logo and search: hides on scroll down, returns on scroll up */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: var(--safe-top); z-index: 30;
+    margin-top: var(--safe-top);
+    height: 5.6rem; padding: 0 calc(1.2rem + var(--safe-right)) 0 calc(1.2rem + var(--safe-left));
+    background: var(--bg); transition: transform .25s ease, background-color .25s ease;
+  }
+  .topbar.scrolled { background: rgba(15, 15, 15, .9); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+  .topbar.hidden { transform: translateY(calc(-100% - var(--safe-top))); }
+  .topbar-logo { padding: 0; font-size: 2rem; gap: .8rem; color: var(--text); }
+  .topbar-logo .logo-mark { font-size: 1.3rem; padding: .2rem .8rem; }
+  .topbar-btn { width: 4.4rem; height: 4.4rem; display: grid; place-items: center; border-radius: 50%; color: var(--text); }
+  .topbar-btn .icon { width: 2.6rem; height: 2.6rem; }
+
+  .page { padding: .6rem calc(1.2rem + var(--safe-right)) calc(8rem + var(--safe-bottom)) calc(1.2rem + var(--safe-left)); }
 
   /* Side menu becomes a bottom tab bar */
   .sidebar, .sidebar:focus-within {

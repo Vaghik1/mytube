@@ -4,6 +4,7 @@ import { isSignedIn, onAuthChange } from './auth';
 import { syncProfile } from './agent';
 import { startPreviews } from './preview';
 import { Sidebar } from './components/Sidebar';
+import { PhoneChrome } from './components/PhoneChrome';
 import { Channel } from './pages/Channel';
 import { Home } from './pages/Home';
 import { Library, Playlist } from './pages/Library';
@@ -43,6 +44,7 @@ export function App() {
     <div className="layout">
       <Sidebar />
       <main key={pathname + location.search}>
+        <PhoneChrome />
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/search" element={<Search />} />

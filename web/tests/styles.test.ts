@@ -159,9 +159,10 @@ describe('notch / status bar / navigation bar (safe areas)', () => {
     });
   });
 
-  it('phone pages start below the status bar / notch and stay clear on the sides', () => {
+  it('phone pages start below the status bar / notch (via the top bar) and stay clear on the sides', () => {
+    expect(computed(['.topbar'], 'margin-top', 390)).toBe('var(--safe-top)');
+    expect(computed(['.topbar'], 'top', 390)).toBe('var(--safe-top)');
     const v = computed(['.page'], 'padding', 390)!;
-    expect(v).toContain('var(--safe-top)');
     expect(v).toContain('var(--safe-left)');
     expect(v).toContain('var(--safe-right)');
     expect(v).toContain('var(--safe-bottom)');
@@ -186,5 +187,31 @@ describe('notch / status bar / navigation bar (safe areas)', () => {
       if (decl(r, 'position')?.value === 'fixed' && decl(r, 'bottom')?.value === '0')
         expect(decl(r, 'padding')?.value, r.selector).toContain('var(--safe-bottom)');
     });
+  });
+});
+
+describe('phone status bar and top bar (like YouTube)', () => {
+  it('are hidden on TV and wide screens', () => {
+    expect(computed(['.statusbar'], 'display', 1920)).toBe('none');
+    expect(computed(['.topbar'], 'display', 1920)).toBe('none');
+  });
+
+  it('the status bar strip covers exactly the status bar area, above everything', () => {
+    expect(computed(['.statusbar'], 'display', 390)).toBe('block');
+    expect(computed(['.statusbar'], 'position', 390)).toBe('fixed');
+    expect(computed(['.statusbar'], 'height', 390)).toBe('var(--safe-top)');
+    expect(Number(computed(['.statusbar'], 'z-index', 390))).toBeGreaterThan(Number(computed(['.topbar'], 'z-index', 390)));
+  });
+
+  it('is solid at the top and a translucent tint once content scrolls under it', () => {
+    expect(computed(['.statusbar'], 'background', 390)).toBe('var(--bg)');
+    const tint = computed(['.statusbar', '.statusbar.scrolled'], 'background', 390)!;
+    expect(tint).toMatch(/rgba\(.*,\s*\.?\d*\)/);
+    expect(computed(['.statusbar.scrolled'], 'backdrop-filter', 390)).toMatch(/blur/);
+  });
+
+  it('the top bar slides fully off screen when hidden', () => {
+    expect(computed(['.topbar.hidden'], 'transform', 390)).toContain('var(--safe-top)');
+    expect(computed(['.topbar'], 'position', 390)).toBe('sticky');
   });
 });
