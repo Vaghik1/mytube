@@ -40,7 +40,6 @@ export function App() {
       <main key={pathname + location.search}>
         <Routes>
           <Route path="/" element={<Home />} />
-          <Route path="/trending" element={<Home initial="trending" />} />
           <Route path="/search" element={<Search />} />
           <Route path="/subscriptions" element={<Subscriptions />} />
           <Route path="/library" element={<Library />} />

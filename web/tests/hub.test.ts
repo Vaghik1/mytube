@@ -101,12 +101,20 @@ describe('recommend_videos', () => {
         { url: 'https://youtu.be/9bZkp7q19f0' },
         { url: 'https://www.youtube.com/shorts/abcdefghijk' },
         { url: 'not a video' },
-        { search_query: 'chess endgames' },
       ],
     });
-    expect(r.structuredContent.added).toBe(4);
+    expect(r.structuredContent.added).toBe(3);
     expect(r.structuredContent.skipped).toHaveLength(1);
     expect(r.isError).toBe(false);
+  });
+
+  it('asks for specific videos instead of topic searches (Home has no topic tab)', async () => {
+    const r = await tool('recommend_videos', { items: [{ search_query: 'chess endgames' }] });
+    expect(r.structuredContent.added).toBe(0);
+    expect(r.structuredContent.skipped[0]).toMatch(/send specific YouTube videos/);
+    const { tools } = (await rpc('tools/list')).body.result;
+    const props = tools.find((t: { name: string }) => t.name === 'recommend_videos').inputSchema.properties.items.items.properties;
+    expect(Object.keys(props)).not.toContain('search_query');
   });
 
   it('never sends the same pick twice', async () => {

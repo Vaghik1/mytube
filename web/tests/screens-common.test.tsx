@@ -31,12 +31,13 @@ const video = (over: Partial<Video> = {}): Video => ({
 const inRouter = (ui: React.ReactNode, path = '/') => render(<MemoryRouter initialEntries={[path]}>{ui}</MemoryRouter>);
 
 describe('Sidebar / tab bar', () => {
-  it('has all six destinations with labels', () => {
+  it('has the five destinations with labels, and no Trending/category tab', () => {
     mockYouTube({ channels: () => ({ items: [] }) });
     inRouter(<Sidebar />);
-    for (const label of ['Search', 'Home', 'Subscriptions', 'Trending', 'Library', 'Settings'])
+    for (const label of ['Search', 'Home', 'Subscriptions', 'Library', 'Settings'])
       expect(screen.getByText(label)).toBeTruthy();
-    expect(screen.getAllByRole('link')).toHaveLength(6);
+    expect(screen.queryByText('Trending')).toBeNull();
+    expect(screen.getAllByRole('link')).toHaveLength(5);
   });
 
   it('marks the current page', () => {
@@ -68,9 +69,10 @@ describe('VideoCard', () => {
     expect(screen.getAllByText(/\d{2}[:.]\d{2}/).length).toBeGreaterThan(0);
   });
 
-  it("shows ChatGPT's reason when there is one", () => {
+  it("shows ChatGPT's picks like any other video (no extra label)", () => {
     inRouter(<VideoCard v={video({ note: 'Great endgame technique' })} />);
-    expect(screen.getByText(/Great endgame technique/)).toBeTruthy();
+    expect(screen.queryByText(/Great endgame technique/)).toBeNull();
+    expect(screen.getByText('Chess blitz')).toBeTruthy();
   });
 });
 
@@ -122,14 +124,19 @@ describe('Login', () => {
 });
 
 describe('Settings', () => {
-  it('saves toggles and the region', () => {
+  it('saves toggles', () => {
     signIn();
     inRouter(<Settings />);
     fireEvent.click(screen.getByText(/Hide Shorts: Off/));
     expect(loadSettings().hideShorts).toBe(true);
     expect(screen.getByText(/Hide Shorts: On/)).toBeTruthy();
-    fireEvent.click(screen.getByText('Armenia'));
-    expect(loadSettings().region).toBe('AM');
+    fireEvent.click(screen.getByText(/Autoplay next: On/));
+    expect(loadSettings().autoplayNext).toBe(false);
+  });
+
+  it('has no region / category settings any more', () => {
+    inRouter(<Settings />);
+    expect(screen.queryByText(/Region/)).toBeNull();
   });
 
   it('shows what MyTube has learned and can clear it', () => {

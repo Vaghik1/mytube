@@ -23,7 +23,6 @@ export function VideoCard({ v, queue, autoFocus }: { v: Video; queue?: Queue; au
         ) : null}
       </div>
       <div className="card-title">{v.title}</div>
-      {v.note && <div className="card-note">✨ {v.note}</div>}
       <div className="card-meta">{v.channelTitle}</div>
       <div className="card-meta">
         {v.live

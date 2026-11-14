@@ -14,6 +14,21 @@ afterEach(() => cleanup());
 describe('on a phone', () => {
   it('runs in touch mode', () => expect(isTouch).toBe(true));
 
+  it("Home is one list with ChatGPT's picks mixed in as normal videos", async () => {
+    mockYouTube(liveRoutes(), {
+      '/api/picks': () => ({ picks: [{ id: 'p', type: 'video', videoId: 'old1', reason: 'Exciting finish', status: 'new' }] }),
+    });
+    render(
+      <MemoryRouter>
+        <Home />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(document.querySelectorAll('.grid .card').length).toBeGreaterThan(0));
+    expect(document.querySelectorAll('.grid')).toHaveLength(1);
+    expect(screen.getByText('Round 4 replay')).toBeTruthy();
+    expect(screen.queryByText(/Exciting finish/)).toBeNull();
+  });
+
   it('uses YouTube\'s normal tap controls in the player', async () => {
     mockYouTube(liveRoutes(), { '/api/picks': () => ({ picks: [] }) });
     const players = installFakePlayer();
@@ -63,6 +78,10 @@ describe('on a phone', () => {
     expect(screen.getAllByText('● LIVE')).toHaveLength(1);
     expect(screen.queryByText('● Live now')).toBeNull();
     expect(screen.queryByText('Starting soon')).toBeNull();
+    // one plain list: no chips / category tabs / ChatGPT tab
+    expect(document.querySelector('.chips')).toBeNull();
+    expect(screen.queryByText(/From ChatGPT/)).toBeNull();
+    expect(screen.queryByText('For you')).toBeNull();
     // the replay is never labelled live
     const replay = [...document.querySelectorAll('.grid .card')].find((c) => c.textContent?.includes('Round 4 replay'));
     if (replay) expect(replay.textContent).not.toContain('LIVE');

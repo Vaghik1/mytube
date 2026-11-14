@@ -157,8 +157,12 @@ async function addPicks(items: PickInput[], source: string) {
   for (const it of items.slice(0, 25)) {
     const videoId = videoIdFrom(it.video_id || it.video || it.url);
     const query = (it.search_query || it.query || '').trim().slice(0, 120);
-    if (!videoId && !query) {
-      skipped.push(`not a YouTube video or search: ${JSON.stringify(it).slice(0, 80)}`);
+    if (!videoId) {
+      skipped.push(
+        query
+          ? `"${query}": send specific YouTube videos, not searches (they appear in the viewer's video list)`
+          : `not a YouTube video: ${JSON.stringify(it).slice(0, 80)}`,
+      );
       continue;
     }
     const dup = s.picks.find((p) => (videoId ? p.videoId === videoId : p.query?.toLowerCase() === query.toLowerCase()));
@@ -277,7 +281,7 @@ const TOOLS = [
     name: 'recommend_videos',
     title: 'Send video picks to the TV',
     description:
-      "Sends recommendations to the viewer's MyTube TV app, where they appear under 'From ChatGPT' with your reason. Each item is either a YouTube video (URL or 11-character id) or a search query for a topic. Only send things that are genuinely likely to interest them; skip anything already watched or already suggested.",
+      "Adds YouTube videos to the top of the viewer's MyTube video list (TV and phone), mixed in like any other video. Each item must be a specific YouTube video (URL or 11-character id). Only send videos genuinely likely to interest them; skip anything already watched or already suggested.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -289,10 +293,10 @@ const TOOLS = [
             type: 'object',
             properties: {
               url: { type: 'string', description: 'YouTube video URL or id' },
-              search_query: { type: 'string', description: 'Use instead of url to suggest a topic search' },
-              title: { type: 'string', description: 'Video title (helps the viewer)' },
-              reason: { type: 'string', description: 'One short sentence: why this fits the viewer' },
+              title: { type: 'string', description: 'Video title' },
+              reason: { type: 'string', description: 'One short sentence: why this fits the viewer (kept for your own records)' },
             },
+            required: ['url'],
             additionalProperties: false,
           },
         },
@@ -306,7 +310,7 @@ const TOOLS = [
     name: 'watch_channel_live',
     title: 'Feature a channel\'s live streams',
     description:
-      "Tells the TV app to watch YouTube channels for live (and soon-starting) broadcasts and show them at the very top under 'Live now' whenever the viewer opens MyTube. Use for official channels that stream events the viewer cares about (e.g. major chess tournaments). Give the channel as @handle, channel URL or UC… id; optionally an end date when the event is over. The app only marks something LIVE when YouTube reports it as live, so replays are never shown as live.",
+      "Tells MyTube to watch YouTube channels for live (and soon-starting) broadcasts and put them at the top of the viewer's video list whenever they open MyTube. Use for official channels that stream events the viewer cares about (e.g. major chess tournaments). Give the channel as @handle, channel URL or UC… id; optionally an end date when the event is over. The app only marks something LIVE when YouTube reports it as live, so replays are never shown as live.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -367,7 +371,7 @@ async function mcp(req: Request, url: URL) {
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: 'mytube', title: 'MyTube TV', version: '1.0.0' },
           instructions:
-            "MyTube is the viewer's personal YouTube app on their TV. Call get_viewer_profile to learn their taste, search the web for recent YouTube videos they would enjoy, then call recommend_videos with 1-5 strong picks and a short reason each. For live events the viewer cares about (major tournaments, premieres), call watch_channel_live with the official broadcaster's YouTube channel so the TV puts the stream at the top while it is live. Quality over quantity; never resend old picks.",
+            "MyTube is the viewer's personal YouTube app on their TV. Call get_viewer_profile to learn their taste, search the web for recent YouTube videos they would enjoy, then call recommend_videos with 1-5 strong picks and a short reason each. For live events the viewer cares about (major tournaments, premieres), call watch_channel_live with the official broadcaster's YouTube channel so the stream leads their video list while it is live. Send only specific videos, never topic searches. Quality over quantity; never resend old picks.",
         });
       } else if (method === 'ping') reply({});
       else if (method === 'tools/list') reply({ tools: TOOLS });

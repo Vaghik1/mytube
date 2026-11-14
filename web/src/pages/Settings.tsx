@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { clearCache } from '../api';
 import { signOut } from '../auth';
-import { REGIONS, defaultSettings, loadSettings, saveSettings, type Settings as S } from '../config';
+import { defaultSettings, loadSettings, saveSettings, type Settings as S } from '../config';
 import { android } from '../tv';
 import { buildProfile, clearHistory } from '../history';
 
@@ -17,20 +17,6 @@ export function Settings() {
 
   return (
     <div className="page settings">
-      <h2 className="section-title">Region (only for the Trending tab and categories)</h2>
-      <div className="chips wrap">
-        {REGIONS.map(([code, name]) => (
-          <button
-            key={code}
-            className={`chip focusable${s.region === code ? ' active' : ''}`}
-            data-autofocus={s.region === code || undefined}
-            onClick={() => update({ region: code })}
-          >
-            {name}
-          </button>
-        ))}
-      </div>
-
       <h2 className="section-title">Feed</h2>
       <div className="chips wrap">
         <button className={`chip focusable${s.hideShorts ? ' active' : ''}`} onClick={() => update({ hideShorts: !s.hideShorts })}>
