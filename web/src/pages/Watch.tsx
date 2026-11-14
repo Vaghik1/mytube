@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getChannelVideos, getForYou, getRating, getVideo, getVideos, rate, type Video } from '../api';
 import { loadSettings } from '../config';
+import { CATEGORY_LABEL, getBranding, getSkipSegments, segmentAt, type Segment } from '../community';
 import { loadYTApi } from '../yt';
 import { markLiked, notInterested, recordWatch, resumePoint, seenIds, startedWatching } from '../history';
 import { dismissPick } from '../agent';
@@ -9,6 +10,7 @@ import { SubscribeButton } from './Channel';
 import type { Queue } from '../components/VideoCard';
 import { VideoGrid } from '../components/VideoGrid';
 import { focusFirst, isTouch, openInYouTube, pushBackHandler, pushKeyHandler } from '../tv';
+import { sendToTv } from '../remote';
 import { fmtCount, fmtDuration, timeAgo } from '../util';
 
 
@@ -49,6 +51,9 @@ export function Watch() {
   const nav = useNavigate();
   const location = useLocation();
   const queue = (location.state as { queue?: Queue } | null)?.queue;
+  /** Sent from the phone ("Play on TV"): start here. */
+  const startAt = (location.state as { start?: number } | null)?.start;
+  const fromPhone = (location.state as { fromPhone?: string } | null)?.fromPhone;
 
   const holder = useRef<HTMLDivElement>(null);
   const player = useRef<any>(null);
@@ -59,6 +64,16 @@ export function Watch() {
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState({ cur: 0, dur: 0 });
   const [error, setError] = useState<number | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [betterTitle, setBetterTitle] = useState<string>();
+  const segments = useRef<Segment[]>([]);
+  const skippedSeg = useRef(new Set<string>());
+  const noticeTimer = useRef(0);
+  const flash = (text: string) => {
+    setNotice(text);
+    window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = window.setTimeout(() => setNotice(null), 2500);
+  };
   const [rating, setRating] = useState<'like' | 'dislike' | 'none'>('none');
   const [upNext, setUpNext] = useState<Video[]>([]);
   const [descOpen, setDescOpen] = useState(false);
@@ -103,7 +118,11 @@ export function Watch() {
         playerVars: {
           autoplay: 1,
           // Pick up where you left off (like YouTube).
-          ...(resumePoint(id) ? { start: Math.floor(resumePoint(id)!.pos) } : {}),
+          ...(startAt !== undefined
+            ? { start: Math.floor(startAt) }
+            : resumePoint(id)
+              ? { start: Math.floor(resumePoint(id)!.pos) }
+              : {}),
           // TV: our own remote-friendly controls. Phone: YouTube's normal tap controls.
           controls: isTouch ? 1 : 0,
           disablekb: isTouch ? 0 : 1,
@@ -143,6 +162,15 @@ export function Watch() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // The phone sent the video that's already playing: jump to where the phone was.
+  useEffect(() => {
+    if (fromPhone && ready && startAt !== undefined) {
+      player.current?.seekTo?.(startAt, true);
+      player.current?.playVideo?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromPhone]);
+
   // Load video data + switch player when the id changes.
   useEffect(() => {
     setVideo(undefined);
@@ -151,11 +179,16 @@ export function Watch() {
     setRating('none');
     showOsd();
     if (ready) {
-      const r = resumePoint(id);
+      const r = startAt !== undefined ? { pos: startAt } : resumePoint(id);
       player.current?.loadVideoById(r ? { videoId: id, startSeconds: Math.floor(r.pos) } : id);
     }
     getVideo(id).then(setVideo).catch(() => {});
     getRating(id).then(setRating).catch(() => {});
+    segments.current = [];
+    skippedSeg.current = new Set();
+    getSkipSegments(id).then((s) => (segments.current = s));
+    setBetterTitle(undefined);
+    if (loadSettings().betterTitles) getBranding(id).then((b) => setBetterTitle(b.title));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -187,6 +220,13 @@ export function Watch() {
       if (!p?.getCurrentTime) return;
       setTime({ cur: p.getCurrentTime() || 0, dur: p.getDuration() || 0 });
       if (p.getPlayerState?.() === 1) {
+        // SponsorBlock: jump over sponsor reads etc. (each segment once, so you can go back to it)
+        const seg = segmentAt(segments.current, p.getCurrentTime() || 0, skippedSeg.current);
+        if (seg) {
+          skippedSeg.current.add(seg.id);
+          p.seekTo(seg.end, true);
+          flash(CATEGORY_LABEL[seg.category] || 'Skipped segment');
+        }
         watched.current += 0.5;
         if (videoRef.current && !started.current && watched.current >= 3) {
           started.current = true;
@@ -297,6 +337,11 @@ export function Watch() {
   return (
     <div className={`watch${isTouch ? ' web' : ''}`}>
       <div className="player" ref={holder} />
+      {notice && (
+        <div className="skip-notice" role="status">
+          {notice}
+        </div>
+      )}
 
       {!isTouch && mode === 'player' && !error && (osd || !playing) && (
         <div className="osd">
@@ -339,7 +384,7 @@ export function Watch() {
       {(isTouch || mode === 'details') && (
         <div className="details" data-focus-trap>
           <div className="details-inner">
-            <h1>{video?.title}</h1>
+            <h1>{betterTitle || video?.title}</h1>
             {!isTouch && (
               <div className="card-meta">
                 {video && `${fmtCount(video.views)} views • ${timeAgo(video.publishedAt)}`}
@@ -363,6 +408,22 @@ export function Watch() {
                 </button>
               )}
               {video && <SubscribeButton channelId={video.channelId} />}
+              {isTouch && (
+                <button
+                  className="btn focusable"
+                  onClick={() => {
+                    const at = player.current?.getCurrentTime?.() || 0;
+                    sendToTv(id, at)
+                      .then(() => {
+                        player.current?.pauseVideo?.();
+                        flash('Playing on your TV');
+                      })
+                      .catch(() => flash("Couldn't reach the TV"));
+                  }}
+                >
+                  📺 Play on TV
+                </button>
+              )}
               <button className="btn focusable" onClick={() => openInYouTube(id)}>
                 Open in YouTube
               </button>

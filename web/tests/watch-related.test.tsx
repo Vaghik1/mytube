@@ -90,3 +90,80 @@ describe('resume where you left off', () => {
     delete (window as any).YT;
   });
 });
+
+describe('sponsor skipping in the player', () => {
+  it('jumps over a sponsor segment once and says so', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (String(url).includes('skipSegments'))
+        return { ok: true, status: 200, json: async () => [{ videoID: 'spons', segments: [{ segment: [60, 120], category: 'sponsor', UUID: 's1' }] }] };
+      return { ok: false, status: 404, json: async () => ({}) };
+    }));
+    const players: any[] = [];
+    (window as any).YT = {
+      Player: class {
+        t = 61;
+        seeks: number[] = [];
+        constructor(_e: unknown, public o: any) { players.push(this); }
+        getCurrentTime() { return this.t; }
+        getDuration() { return 600; }
+        getPlayerState() { return 1; }
+        seekTo(t: number) { this.seeks.push(t); this.t = t; }
+        destroy() {}
+      },
+    };
+    render(
+      <MemoryRouter initialEntries={['/watch/spons']}>
+        <Routes>
+          <Route path="/watch/:id" element={<Watch />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(players).toHaveLength(1));
+    await act(async () => void (await vi.advanceTimersByTimeAsync(1200)));
+    expect(players[0].seeks).toEqual([120]);
+    expect(screen.getByText('Skipped sponsor')).toBeTruthy();
+    players[0].t = 70; // you go back into it on purpose
+    await act(async () => void (await vi.advanceTimersByTimeAsync(1200)));
+    expect(players[0].seeks).toEqual([120]);
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    delete (window as any).YT;
+  });
+});
+
+describe('Play on TV button (phone)', () => {
+  it('sends the video with the current time and pauses the phone', async () => {
+    const { signIn } = await import('./youtube-mock');
+    signIn();
+    const posts: any[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === '/api/remote') posts.push(JSON.parse(String(init?.body)));
+      return new Response(JSON.stringify({ ok: true }), { status: url === '/api/remote' ? 200 : 404 });
+    }));
+    const players: any[] = [];
+    (window as any).YT = {
+      Player: class {
+        paused = false;
+        constructor() { players.push(this); }
+        getCurrentTime() { return 95.5; }
+        pauseVideo() { this.paused = true; }
+        destroy() {}
+      },
+    };
+    render(
+      <MemoryRouter initialEntries={['/watch/tvvid']}>
+        <Routes>
+          <Route path="/watch/:id" element={<Watch />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(players).toHaveLength(1));
+    fireEvent.click(await screen.findByText('📺 Play on TV'));
+    await waitFor(() => expect(screen.getByText('Playing on your TV')).toBeTruthy());
+    expect(posts).toEqual([{ videoId: 'tvvid', start: 95 }]);
+    expect(players[0].paused).toBe(true);
+    vi.unstubAllGlobals();
+    delete (window as any).YT;
+  });
+});

@@ -22,7 +22,7 @@ export function Home() {
   }, []);
   return (
     <div className="page">
-      <VideoGrid videos={items} title="For you" autoFocusFirst />
+      <VideoGrid videos={items} title="For you" autoFocusFirst trackImpressions />
       <Status loading={loading} error={error} empty={!loading && !error && !items.length ? 'Nothing to show yet' : undefined} />
     </div>
   );

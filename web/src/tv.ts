@@ -187,6 +187,9 @@ export type Bridge = {
   isTv?(): boolean;
   /** Newer apps: download this APK and ask Android to install it (progress via window.__mytubeUpdate). */
   installUpdate?(url: string): void;
+  /** Newer apps: speech-to-text through Android (result via window.__mytubeVoice). */
+  hasVoiceSearch?(): boolean;
+  startVoiceSearch?(): void;
 };
 export const android: Bridge | undefined = (window as any).MyTubeAndroid;
 const hasTouch = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);

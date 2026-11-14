@@ -4,6 +4,7 @@ import { fmtCount, fmtDuration, fmtStart, timeAgo } from '../util';
 import { usePreviewActive } from '../preview';
 import { Preview } from './Preview';
 import { resumePoint } from '../history';
+import { useBranding } from '../community';
 
 export type Queue = { ids: string[]; index: number; title?: string };
 
@@ -11,6 +12,7 @@ export function VideoCard({ v, queue, autoFocus }: { v: Video; queue?: Queue; au
   const nav = useNavigate();
   const previewing = usePreviewActive(v.id);
   const resume = v.live ? null : resumePoint(v.id);
+  const b = useBranding(v);
   return (
     <button
       data-video-id={v.id}
@@ -19,7 +21,15 @@ export function VideoCard({ v, queue, autoFocus }: { v: Video; queue?: Queue; au
       onClick={() => nav(`/watch/${v.id}`, { state: { queue } })}
     >
       <div className="thumb">
-        <img src={v.thumb} alt="" loading="lazy" />
+        <img
+          src={b.thumb}
+          alt=""
+          loading="lazy"
+          onError={(e) => {
+            // DeArrow's thumbnail isn't ready: show YouTube's
+            if (e.currentTarget.src !== b.fallbackThumb) e.currentTarget.src = b.fallbackThumb;
+          }}
+        />
         {previewing && <Preview id={v.id} />}
         {v.live ? (
           <span className="badge live">● LIVE</span>
@@ -35,7 +45,7 @@ export function VideoCard({ v, queue, autoFocus }: { v: Video; queue?: Queue; au
           </span>
         )}
       </div>
-      <div className="card-title">{v.title}</div>
+      <div className="card-title">{b.title}</div>
       <div className="card-meta">{v.channelTitle}</div>
       <div className="card-meta">
         {v.live

@@ -582,6 +582,45 @@ async function sync(req: Request) {
   return json({ ok: true, pending: s.picks.filter((p) => p.status === 'new').length });
 }
 
+// ── "Play on TV": the phone leaves a command, the TV picks it up ──
+// Kept in its own tiny file so the TV's frequent checks stay cheap.
+type RemoteCommand = { id: string; videoId: string; start: number; at: number };
+export const REMOTE_TTL_MS = 2 * 60_000; // a command the TV hasn't picked up in 2 minutes is dropped
+const REMOTE_PATH = () => PATH().replace(/state\.json$/, 'remote.json');
+
+async function readRemote(): Promise<RemoteCommand | null> {
+  const token = blobToken();
+  try {
+    const r = await get(REMOTE_PATH(), { access, useCache: false, ...(token ? { token } : {}) });
+    if (!r || r.statusCode !== 200) return null;
+    return JSON.parse(await new Response(r.stream).text()) as RemoteCommand;
+  } catch {
+    return null;
+  }
+}
+
+async function remote(req: Request) {
+  if (!(await isTvApp(req))) return json({ error: 'unauthorized' }, 401);
+  if (req.method === 'POST') {
+    const body = (await req.json().catch(() => ({}))) as { videoId?: string; start?: number };
+    const videoId = videoIdFrom(body.videoId);
+    if (!videoId) return json({ error: 'videoId needed' }, 400);
+    const cmd: RemoteCommand = {
+      id: Math.random().toString(36).slice(2, 10),
+      videoId,
+      start: Math.max(0, Math.floor(Number(body.start) || 0)),
+      at: Date.now(),
+    };
+    const token = blobToken();
+    await put(REMOTE_PATH(), JSON.stringify(cmd), {
+      access, addRandomSuffix: false, allowOverwrite: true, contentType: 'application/json', ...(token ? { token } : {}),
+    });
+    return json({ ok: true, id: cmd.id });
+  }
+  const cmd = await readRemote();
+  return json({ command: cmd && Date.now() - cmd.at < REMOTE_TTL_MS ? cmd : null });
+}
+
 async function handle(req: Request) {
   const url = new URL(req.url);
   const route = url.searchParams.get('r') || url.pathname.split('/').pop();
@@ -589,6 +628,7 @@ async function handle(req: Request) {
     if (route === 'mcp') return await mcp(req, url);
     if (route === 'picks') return await picks(req, url);
     if (route === 'sync') return await sync(req);
+    if (route === 'remote') return await remote(req);
     return json({ error: 'not found' }, 404);
   } catch (e) {
     return json({ error: (e as Error).message }, 500);

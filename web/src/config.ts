@@ -17,6 +17,10 @@ export type Settings = {
   feedChannelLimit: number;
   /** Play the next video in the list automatically when one ends. */
   autoplayNext: boolean;
+  /** Jump over sponsor reads, self-promotion and "like & subscribe" reminders (SponsorBlock). */
+  skipSponsors: boolean;
+  /** Community-written titles and thumbnails instead of clickbait (DeArrow). */
+  betterTitles: boolean;
   /** Play a muted preview of the video you stop on while browsing. */
   previewOnBrowse: boolean;
 };
@@ -29,6 +33,8 @@ export const defaultSettings: Settings = {
   feedChannelLimit: 50,
   autoplayNext: true,
   previewOnBrowse: true,
+  skipSponsors: true,
+  betterTitles: true,
 };
 
 export const REGIONS: [string, string][] = [

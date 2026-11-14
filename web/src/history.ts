@@ -2,6 +2,7 @@
 // Everything here updates automatically as you watch; nothing is sent anywhere except
 // the YouTube searches built from your top topics.
 import type { Video } from './api';
+import { clearImpressions } from './impressions';
 
 export type Watch = {
   id: string;
@@ -77,6 +78,7 @@ export function recordWatch(v: Video, sec: number, pos?: number) {
 /** Called once each time you start a video (after a few seconds of playing). */
 export function startedWatching(v: Video) {
   if (!v?.id) return;
+  clearImpressions(v.id);
   const prev = loadHistory().find((w) => w.id === v.id);
   upsert(v, { opens: (prev?.opens || 0) + 1, skip: false });
 }

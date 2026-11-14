@@ -62,7 +62,17 @@ export function Settings() {
         <button className={`chip focusable${s.previewOnBrowse ? ' active' : ''}`} onClick={() => update({ previewOnBrowse: !s.previewOnBrowse })}>
           Previews while browsing: {s.previewOnBrowse ? 'On' : 'Off'}
         </button>
+        <button className={`chip focusable${s.skipSponsors ? ' active' : ''}`} onClick={() => update({ skipSponsors: !s.skipSponsors })}>
+          Skip sponsors: {s.skipSponsors ? 'On' : 'Off'}
+        </button>
+        <button className={`chip focusable${s.betterTitles ? ' active' : ''}`} onClick={() => update({ betterTitles: !s.betterTitles })}>
+          Better titles: {s.betterTitles ? 'On' : 'Off'}
+        </button>
       </div>
+      <p className="muted">
+        Sponsor skipping uses SponsorBlock; better titles and thumbnails use DeArrow. Both are community projects
+        (sponsor.ajay.app), data under CC BY-NC-SA 4.0.
+      </p>
 
       {(s.blockedChannels.length > 0 || s.blockedKeywords.length > 0) && (
         <>

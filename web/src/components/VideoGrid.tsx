@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { recordImpression } from '../impressions';
 import type { Page, Video } from '../api';
 import { errorText } from '../util';
 import { VideoCard } from './VideoCard';
@@ -10,10 +11,54 @@ export function Status({ loading, error, empty }: { loading?: boolean; error?: u
   return null;
 }
 
-export function VideoGrid({ videos, title, autoFocusFirst }: { videos: Video[]; title?: string; autoFocusFirst?: boolean }) {
+/** Time a card must stay on screen to count as "seen in the list". */
+export const IMPRESSION_MS = 1000;
+
+/** Notes which cards stay on screen for a moment (For you only). */
+function useImpressions(ref: React.RefObject<HTMLDivElement | null>, on: boolean, deps: unknown) {
+  useEffect(() => {
+    const root = ref.current;
+    if (!on || !root || typeof IntersectionObserver === 'undefined') return;
+    const timers = new Map<Element, number>();
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          const id = (e.target as HTMLElement).dataset.videoId;
+          if (!id) continue;
+          if (e.isIntersecting) {
+            if (!timers.has(e.target)) timers.set(e.target, window.setTimeout(() => recordImpression(id), IMPRESSION_MS));
+          } else {
+            window.clearTimeout(timers.get(e.target));
+            timers.delete(e.target);
+          }
+        }
+      },
+      { threshold: 0.6 },
+    );
+    root.querySelectorAll('[data-video-id]').forEach((el) => io.observe(el));
+    return () => {
+      io.disconnect();
+      timers.forEach((t) => window.clearTimeout(t));
+    };
+  }, [on, deps, ref]);
+}
+
+export function VideoGrid({
+  videos,
+  title,
+  autoFocusFirst,
+  trackImpressions,
+}: {
+  videos: Video[];
+  title?: string;
+  autoFocusFirst?: boolean;
+  trackImpressions?: boolean;
+}) {
   const ids = videos.map((v) => v.id);
+  const ref = useRef<HTMLDivElement>(null);
+  useImpressions(ref, !!trackImpressions, videos);
   return (
-    <div className="grid">
+    <div className="grid" ref={ref}>
       {videos.map((v, i) => (
         <VideoCard key={`${v.id}-${i}`} v={v} queue={{ ids, index: i, title }} autoFocus={autoFocusFirst && i === 0} />
       ))}

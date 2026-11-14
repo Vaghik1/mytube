@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Route, Routes, useLocation } from 'react-router-dom';
+import { Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { isSignedIn, onAuthChange } from './auth';
 import { syncProfile } from './agent';
 import { startPreviews } from './preview';
+import { listenForTvCommands } from './remote';
+import { isTVApp } from './tv';
 import { Sidebar } from './components/Sidebar';
 import { PhoneChrome } from './components/PhoneChrome';
 import { UpdateBanner } from './components/UpdateBanner';
@@ -18,6 +20,7 @@ import { Watch } from './pages/Watch';
 export function App() {
   const [signedIn, setSignedIn] = useState(isSignedIn);
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   useEffect(() => onAuthChange(() => setSignedIn(isSignedIn())), []);
   // Muted previews while browsing lists (not on the player page).
   const onPlayer = pathname.startsWith('/watch/');
@@ -30,6 +33,21 @@ export function App() {
     run();
     const t = window.setInterval(run, 5 * 60_000);
     return () => window.clearInterval(t);
+  }, [signedIn]);
+
+  // The remote's search / microphone key opens voice search.
+  useEffect(() => {
+    (window as any).__mytubeVoiceKey = () => navigate('/search?voice=1');
+    return () => void delete (window as any).__mytubeVoiceKey;
+  }, [navigate]);
+
+  // TV: play videos sent from the phone ("Play on TV").
+  useEffect(() => {
+    if (!signedIn || !isTVApp) return;
+    return listenForTvCommands((c) =>
+      navigate(`/watch/${c.videoId}`, { replace: location.pathname.startsWith('/watch/'), state: { start: c.start, fromPhone: c.id } }),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signedIn]);
 
   if (!signedIn) return <Login />;

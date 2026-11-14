@@ -20,6 +20,10 @@
       "destination": "/api/hub?r=sync"
     },
     {
+      "source": "/api/remote",
+      "destination": "/api/hub?r=remote"
+    },
+    {
       "source": "/((?!api/|assets/|icon-|favicon).*)",
       "destination": "/index.html"
     }

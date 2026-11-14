@@ -2,6 +2,7 @@
 import { getAccessToken } from './auth';
 import { effectiveSettings, loadRemotePrefs, loadSettings } from './config';
 import { buildProfile, seedQuery, seenIds, tokens, continueWatching } from './history';
+import { demoteIgnored } from './impressions';
 
 const BASE = 'https://www.googleapis.com/youtube/v3/';
 
@@ -560,9 +561,10 @@ export async function getForYou(): Promise<Video[]> {
     agent.then((m) => m.getLiveNow()).catch(() => ({ live: [] as Video[], soon: [] as Video[] })),
   ]);
   // ChatGPT's share: its hand-picked videos alternating with its favourite channels / interests.
-  const gpt = weave(applyFilters(picks), feed.gpt, 1);
+  // Videos you've scrolled past many times drift a few places down (gently, never hidden).
+  const gpt = demoteIgnored(weave(applyFilters(picks), feed.gpt, 1));
   // Streams that are live right now lead the list; then your videos and ChatGPT's, merged.
-  const mine = [...streams.soon.slice(0, 3), ...feed.mine];
+  const mine = [...streams.soon.slice(0, 3), ...demoteIgnored(feed.mine)];
   const merged = weave(mine, gpt);
   // Videos you started but haven't finished come back for a few days, a little way down, never at the top.
   const cont = await continueVideos();

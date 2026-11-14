@@ -320,3 +320,35 @@ describe('update_viewer_preferences', () => {
     expect((await res.json()).preferences.blockedChannels).toEqual(['Drama Channel']);
   });
 });
+
+describe('/api/remote ("Play on TV" from the phone)', () => {
+  const signedIn = (aud = 'client-123') =>
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ aud, expires_in: '3600' }), { status: 200 })));
+  const req = (init: RequestInit = {}) =>
+    new Request('https://mytube.test/api/hub?r=remote', { ...init, headers: { Authorization: 'Bearer ya29.device' } });
+
+  it('the phone sends a video; the TV picks it up with the start time', async () => {
+    signedIn();
+    const sent = await hub.POST(req({ method: 'POST', body: JSON.stringify({ videoId: 'https://youtu.be/dQw4w9WgXcQ', start: 125.7 }) }));
+    expect(sent.status).toBe(200);
+    const { command } = await (await hub.GET(req())).json();
+    expect(command).toMatchObject({ videoId: 'dQw4w9WgXcQ', start: 125 });
+    expect(command.id).toBeTruthy();
+  });
+
+  it('forgets a command the TV did not pick up within 2 minutes', async () => {
+    signedIn();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    await hub.POST(req({ method: 'POST', body: JSON.stringify({ videoId: 'dQw4w9WgXcQ' }) }));
+    vi.setSystemTime(Date.now() + hub.REMOTE_TTL_MS + 1000);
+    expect((await (await hub.GET(req())).json()).command).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('needs your own sign-in and a real video', async () => {
+    signedIn('someone-else');
+    expect((await hub.POST(req({ method: 'POST', body: JSON.stringify({ videoId: 'dQw4w9WgXcQ' }) }))).status).toBe(401);
+    signedIn();
+    expect((await hub.POST(req({ method: 'POST', body: JSON.stringify({ videoId: 'nope' }) }))).status).toBe(400);
+  });
+});

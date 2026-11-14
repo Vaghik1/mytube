@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { search } from '../api';
 import { PagedGrid } from '../components/VideoGrid';
+import { canVoiceSearch, listen } from '../voice';
 
 const KEY = 'mytube.recentSearches';
 const loadRecent = (): string[] => {
@@ -17,6 +18,8 @@ export function Search() {
   const q = params.get('q') || '';
   const [text, setText] = useState(q);
   const [recent, setRecent] = useState<string[]>(loadRecent);
+  const [listening, setListening] = useState(false);
+  const voice = canVoiceSearch();
 
   const run = (query: string) => {
     const s = query.trim();
@@ -29,6 +32,22 @@ export function Search() {
     (document.activeElement as HTMLElement | null)?.blur();
   };
 
+  const speak = async () => {
+    setListening(true);
+    const said = await listen();
+    setListening(false);
+    if (said) run(said);
+  };
+  // Opened with the remote's search/mic key: start listening right away.
+  useEffect(() => {
+    if (params.get('voice') === '1' && voice) {
+      params.delete('voice');
+      setParams(params, { replace: true });
+      speak();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.get('voice')]);
+
   return (
     <div className="page">
       <form
@@ -40,12 +59,23 @@ export function Search() {
       >
         <input
           className="focusable search-input"
-          data-autofocus={!q || undefined}
+          data-autofocus={(!q && !voice) || undefined}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Search YouTube"
+          placeholder={listening ? 'Listening…' : 'Search YouTube'}
           enterKeyHint="search"
         />
+        {voice && (
+          <button
+            className={`btn focusable mic${listening ? ' on' : ''}`}
+            type="button"
+            data-autofocus={!q || undefined}
+            onClick={speak}
+            aria-label="Search by voice"
+          >
+            🎤
+          </button>
+        )}
         <button className="btn focusable" type="submit">
           Search
         </button>
