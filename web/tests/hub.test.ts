@@ -66,6 +66,7 @@ describe('MCP connection (ChatGPT plugin)', () => {
     const r = await rpc('initialize', { protocolVersion: '2025-06-18' });
     expect(r.body.result.protocolVersion).toBe('2025-06-18');
     expect(r.body.result.serverInfo.name).toBe('mytube');
+    expect(r.body.result.serverInfo.icons[0].src).toBe('https://mytube.test/icon-512.png');
     expect(r.body.result.capabilities.tools).toBeDefined();
     expect((await rpc('notifications/initialized')).status).toBe(202);
   });

@@ -479,7 +479,15 @@ async function mcp(req: Request, url: URL) {
         reply({
           protocolVersion: params?.protocolVersion || '2025-06-18',
           capabilities: { tools: { listChanged: false } },
-          serverInfo: { name: 'mytube', title: 'MyTube TV', version: '1.0.0' },
+          serverInfo: {
+            name: 'mytube',
+            title: 'MyTube TV',
+            version: '1.1.0',
+            icons: [
+              { src: `${url.origin}/icon-512.png`, mimeType: 'image/png', sizes: ['512x512'] },
+              { src: `${url.origin}/icon-192.png`, mimeType: 'image/png', sizes: ['192x192'] },
+            ],
+          },
           instructions:
             "MyTube is the viewer's personal YouTube app on their TV. Call get_viewer_profile to learn their taste, search the web for recent YouTube videos they would enjoy, then call recommend_videos with 1-5 strong picks and a short reason each. For live events the viewer cares about (major tournaments, premieres), call watch_channel_live with the official broadcaster's YouTube channel so the stream leads their video list while it is live. Send only specific videos, never topic searches. When the viewer states lasting likes or dislikes (topics, channels, Shorts, things to stop showing, live events to follow), save them with update_viewer_preferences. Quality over quantity; never resend old picks.",
         });

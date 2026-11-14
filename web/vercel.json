@@ -20,7 +20,7 @@
       "destination": "/api/hub?r=sync"
     },
     {
-      "source": "/((?!api/|assets/).*)",
+      "source": "/((?!api/|assets/|icon-|favicon).*)",
       "destination": "/index.html"
     }
   ]
