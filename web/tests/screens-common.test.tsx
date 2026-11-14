@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Video } from '../src/api';
 import { Sidebar } from '../src/components/Sidebar';
 import { VideoCard } from '../src/components/VideoCard';
-import { loadSettings } from '../src/config';
+import { loadRemotePrefs, loadSettings, saveRemotePrefs } from '../src/config';
 import { recordWatch } from '../src/history';
 import { Login } from '../src/pages/Login';
 import { Settings } from '../src/pages/Settings';
@@ -132,6 +132,20 @@ describe('Settings', () => {
     expect(screen.getByText(/Hide Shorts: On/)).toBeTruthy();
     fireEvent.click(screen.getByText(/Autoplay next: On/));
     expect(loadSettings().autoplayNext).toBe(false);
+  });
+
+  it("shows what ChatGPT set and can reset it", async () => {
+    signIn();
+    saveRemotePrefs({ interests: ['chess', 'physics'], dislikedTopics: ['celebrity gossip'], hideShorts: true });
+    const f = mockYouTube({}, { '/api/picks': () => ({ preferences: {} }) });
+    inRouter(<Settings />);
+    expect(screen.getByText('Interests: chess, physics')).toBeTruthy();
+    expect(screen.getByText('Hidden topics: celebrity gossip')).toBeTruthy();
+    expect(screen.getByText(/Shorts: hidden/)).toBeTruthy();
+    fireEvent.click(screen.getByText('Reset ChatGPT preferences'));
+    await waitFor(() => expect(screen.queryByText(/Interests:/)).toBeNull());
+    expect(JSON.parse((f.mock.calls[0][1] as RequestInit).body as string).action).toBe('reset_preferences');
+    expect(loadRemotePrefs().interests).toEqual([]);
   });
 
   it('has no region / category settings any more', () => {

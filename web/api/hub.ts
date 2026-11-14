@@ -46,7 +46,32 @@ type State = {
     blockedKeywords?: string[];
   };
   picks: Pick[];
+  /** Preferences managed by ChatGPT; applied by the TV/phone app. */
+  preferences?: Prefs;
 };
+
+type Prefs = {
+  interests: string[];
+  favoriteChannels: string[];
+  liveTopics: string[];
+  dislikedTopics: string[];
+  blockedChannels: string[];
+  blockedWords: string[];
+  hideShorts?: boolean;
+  updatedAt?: string;
+};
+
+const PREF_LISTS = ['interests', 'favoriteChannels', 'liveTopics', 'dislikedTopics', 'blockedChannels', 'blockedWords'] as const;
+const LIMITS: Record<(typeof PREF_LISTS)[number], number> = {
+  interests: 30,
+  favoriteChannels: 30,
+  liveTopics: 3, // each live topic costs a YouTube search (100 units) about every 90 minutes
+  dislikedTopics: 50,
+  blockedChannels: 100,
+  blockedWords: 100,
+};
+const emptyPrefs = (): Prefs => ({ interests: [], favoriteChannels: [], liveTopics: [], dislikedTopics: [], blockedChannels: [], blockedWords: [] });
+const CHANNEL_RE = /(UC[A-Za-z0-9_-]{22}|@[A-Za-z0-9._-]+)/;
 
 const PATH = () =>
   `mytube/${createHash('sha256')
@@ -241,6 +266,63 @@ async function stopLiveWatches(channels: string[]) {
   return { stopped: n };
 }
 
+type PrefsInput = {
+  hide_shorts?: boolean | null;
+  reset?: boolean;
+} & Partial<Record<`${'add' | 'remove'}_${'interests' | 'favorite_channels' | 'live_topics' | 'disliked_topics' | 'blocked_channels' | 'blocked_words'}`, string[]>>;
+
+const KEYS: Record<string, (typeof PREF_LISTS)[number]> = {
+  interests: 'interests',
+  favorite_channels: 'favoriteChannels',
+  live_topics: 'liveTopics',
+  disliked_topics: 'dislikedTopics',
+  blocked_channels: 'blockedChannels',
+  blocked_words: 'blockedWords',
+};
+
+function cleanItem(list: (typeof PREF_LISTS)[number], raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const v = raw.trim().replace(/\s+/g, ' ').slice(0, 80);
+  if (!v) return undefined;
+  if (list === 'favoriteChannels') return v.match(CHANNEL_RE)?.[1];
+  if (list === 'blockedChannels') return v; // id, @handle or exact channel name
+  return v.toLowerCase();
+}
+
+async function updatePreferences(input: PrefsInput) {
+  const s = await load();
+  const prefs: Prefs = input.reset ? emptyPrefs() : { ...emptyPrefs(), ...s.preferences };
+  const notes: string[] = [];
+  for (const [name, list] of Object.entries(KEYS)) {
+    const add = (input as Record<string, unknown>)[`add_${name}`];
+    const remove = (input as Record<string, unknown>)[`remove_${name}`];
+    if (Array.isArray(remove)) {
+      const rm = new Set(remove.map((x) => cleanItem(list, x)?.toLowerCase()).filter(Boolean));
+      prefs[list] = prefs[list].filter((x) => !rm.has(x.toLowerCase()));
+    }
+    if (Array.isArray(add)) {
+      for (const raw of add) {
+        const v = cleanItem(list, raw);
+        if (!v) {
+          notes.push(list === 'favoriteChannels' ? `${String(raw).slice(0, 60)}: use a YouTube @handle, channel URL or UC… id` : `ignored: ${String(raw).slice(0, 60)}`);
+          continue;
+        }
+        if (!prefs[list].some((x) => x.toLowerCase() === v.toLowerCase())) prefs[list].push(v);
+      }
+      if (prefs[list].length > LIMITS[list]) {
+        notes.push(`${name}: kept the newest ${LIMITS[list]}`);
+        prefs[list] = prefs[list].slice(-LIMITS[list]);
+      }
+    }
+  }
+  if (input.hide_shorts === null) delete prefs.hideShorts;
+  else if (typeof input.hide_shorts === 'boolean') prefs.hideShorts = input.hide_shorts;
+  prefs.updatedAt = new Date().toISOString();
+  s.preferences = prefs;
+  await save(s);
+  return { preferences: prefs, notes };
+}
+
 function viewerSummary(s: State) {
   const p = s.profile;
   return {
@@ -253,6 +335,7 @@ function viewerSummary(s: State) {
     favourite_topics: p?.topTopics.slice(0, 25) ?? [],
     recently_watched: p?.recent.slice(0, 25) ?? [],
     dislikes: { blocked_channels: p?.blockedChannels ?? [], blocked_words: p?.blockedKeywords ?? [], hides_shorts: p?.hideShorts ?? false },
+    preferences_you_set: s.preferences ?? emptyPrefs(),
     live_channels_watched: s.picks
       .filter((p) => p.type === 'live_channel' && p.status === 'new')
       .map((p) => ({ channel: p.channel, label: p.title, until: p.until })),
@@ -337,6 +420,33 @@ const TOOLS = [
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
+    name: 'update_viewer_preferences',
+    title: 'Update the viewer\'s MyTube preferences',
+    description:
+      "Changes what MyTube shows the viewer. Interests are searched for and ranked higher; favourite channels' new uploads are added; live topics are searched on YouTube for streams that are live right now (about every 90 minutes, max 3 topics) and put at the top; disliked topics and blocked channels/words are hidden; hide_shorts hides videos of 3 minutes or less. Use add_* / remove_* lists (only the changes), hide_shorts true/false (null = back to the viewer's own setting), or reset: true to clear everything you set before. Returns the full current preferences.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        add_interests: { type: 'array', items: { type: 'string' }, description: 'Topics, e.g. "chess", "physics", "ai"' },
+        remove_interests: { type: 'array', items: { type: 'string' } },
+        add_favorite_channels: { type: 'array', items: { type: 'string' }, description: 'YouTube @handle, channel URL or UC… id' },
+        remove_favorite_channels: { type: 'array', items: { type: 'string' } },
+        add_live_topics: { type: 'array', items: { type: 'string' }, description: 'Search phrases for live streams, e.g. "chess tournament live"' },
+        remove_live_topics: { type: 'array', items: { type: 'string' } },
+        add_disliked_topics: { type: 'array', items: { type: 'string' }, description: 'Hidden when all words appear in a title/tags, e.g. "celebrity gossip"' },
+        remove_disliked_topics: { type: 'array', items: { type: 'string' } },
+        add_blocked_channels: { type: 'array', items: { type: 'string' }, description: 'Channel id, @handle or exact name' },
+        remove_blocked_channels: { type: 'array', items: { type: 'string' } },
+        add_blocked_words: { type: 'array', items: { type: 'string' }, description: 'Hide videos whose title contains these words' },
+        remove_blocked_words: { type: 'array', items: { type: 'string' } },
+        hide_shorts: { type: ['boolean', 'null'] },
+        reset: { type: 'boolean', description: 'Clear all preferences you set before applying the rest' },
+      },
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
     name: 'stop_watching_channel_live',
     title: 'Stop featuring a channel\'s live streams',
     description: 'Removes channels previously added with watch_channel_live.',
@@ -371,7 +481,7 @@ async function mcp(req: Request, url: URL) {
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: 'mytube', title: 'MyTube TV', version: '1.0.0' },
           instructions:
-            "MyTube is the viewer's personal YouTube app on their TV. Call get_viewer_profile to learn their taste, search the web for recent YouTube videos they would enjoy, then call recommend_videos with 1-5 strong picks and a short reason each. For live events the viewer cares about (major tournaments, premieres), call watch_channel_live with the official broadcaster's YouTube channel so the stream leads their video list while it is live. Send only specific videos, never topic searches. Quality over quantity; never resend old picks.",
+            "MyTube is the viewer's personal YouTube app on their TV. Call get_viewer_profile to learn their taste, search the web for recent YouTube videos they would enjoy, then call recommend_videos with 1-5 strong picks and a short reason each. For live events the viewer cares about (major tournaments, premieres), call watch_channel_live with the official broadcaster's YouTube channel so the stream leads their video list while it is live. Send only specific videos, never topic searches. When the viewer states lasting likes or dislikes (topics, channels, Shorts, things to stop showing, live events to follow), save them with update_viewer_preferences. Quality over quantity; never resend old picks.",
         });
       } else if (method === 'ping') reply({});
       else if (method === 'tools/list') reply({ tools: TOOLS });
@@ -383,6 +493,7 @@ async function mcp(req: Request, url: URL) {
         else if (name === 'recommend_videos') result = await addPicks(Array.isArray(args.items) ? args.items : [], 'ChatGPT');
         else if (name === 'watch_channel_live') result = await addLiveWatches(Array.isArray(args.items) ? args.items : [], 'ChatGPT');
         else if (name === 'stop_watching_channel_live') result = await stopLiveWatches(Array.isArray(args.channels) ? args.channels : []);
+        else if (name === 'update_viewer_preferences') result = await updatePreferences(args);
         else {
           fail(-32602, `Unknown tool: ${name}`);
           continue;
@@ -410,10 +521,15 @@ async function picks(req: Request, url: URL) {
     const all = url.searchParams.get('all') === '1';
     const now = new Date().toISOString();
     const visible = s.picks.filter((p) => all || (p.status === 'new' && !(p.until && p.until < now)));
-    return json({ picks: visible, profile: key ? viewerSummary(s) : undefined });
+    return json({ picks: visible, preferences: s.preferences ?? emptyPrefs(), profile: key ? viewerSummary(s) : undefined });
   }
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405);
   const body = (await req.json().catch(() => ({}))) as { action?: string; id?: string; videoId?: string; items?: PickInput[] } & PickInput;
+  if (body.action === 'reset_preferences') return json(await updatePreferences({ reset: true }));
+  if (body.action === 'update_preferences') {
+    if (!key) return json({ error: 'updating preferences needs the API key' }, 401);
+    return json(await updatePreferences(body as PrefsInput));
+  }
   if (body.action === 'dismiss' || body.action === 'watched') {
     let n = 0;
     for (const p of s.picks) {

@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import { clearCache } from '../api';
 import { signOut } from '../auth';
-import { defaultSettings, loadSettings, saveSettings, type Settings as S } from '../config';
+import { loadRemotePrefs, defaultSettings, loadSettings, saveSettings, type Settings as S } from '../config';
 import { android } from '../tv';
 import { buildProfile, clearHistory } from '../history';
+import { resetAssistantPrefs } from '../agent';
 
 export function Settings() {
   const [s, setS] = useState<S>(loadSettings);
   const [profile, setProfile] = useState(buildProfile);
+  const [remote, setRemote] = useState(loadRemotePrefs);
   const update = (patch: Partial<S>) => {
     const next = { ...s, ...patch };
     setS(next);
@@ -57,6 +59,40 @@ export function Settings() {
           Clear watch history
         </button>
       </div>
+
+      <h2 className="section-title">Set by ChatGPT</h2>
+      {[
+        ['Interests', remote.interests],
+        ['Favourite channels', remote.favoriteChannels],
+        ['Live topics', remote.liveTopics],
+        ['Hidden topics', remote.dislikedTopics],
+        ['Blocked channels', remote.blockedChannels],
+        ['Blocked words', remote.blockedWords],
+      ]
+        .filter(([, list]) => (list as string[]).length)
+        .map(([label, list]) => (
+          <p key={label as string} className="muted">
+            {label}: {(list as string[]).join(', ')}
+          </p>
+        ))}
+      {remote.hideShorts !== undefined && <p className="muted">Shorts: {remote.hideShorts ? 'hidden' : 'shown'} (ChatGPT's choice)</p>}
+      {Object.values(remote).every((v) => !Array.isArray(v) || !v.length) && remote.hideShorts === undefined ? (
+        <p className="muted">Nothing yet. Ask ChatGPT, e.g. "add chess and physics to my MyTube interests".</p>
+      ) : (
+        <div className="chips wrap">
+          <button
+            className="chip focusable"
+            onClick={() => {
+              resetAssistantPrefs()
+                .then(setRemote)
+                .catch(() => {});
+              clearCache('fy.');
+            }}
+          >
+            Reset ChatGPT preferences
+          </button>
+        </div>
+      )}
 
       <h2 className="section-title">Account</h2>
       <div className="chips wrap">

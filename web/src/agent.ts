@@ -1,7 +1,7 @@
 // Talks to the MyTube assistant hub: shares your taste profile with ChatGPT and fetches its picks.
 import { getAccessToken } from './auth';
-import { applyFilters, channelsUploads, getSubscriptionFeed, getVideos, resolveChannelId, type Video } from './api';
-import { loadSettings } from './config';
+import { applyFilters, cachedLiveSearch, channelsUploads, getSubscriptionFeed, getVideos, resolveChannelId, type Video } from './api';
+import { effectiveSettings, loadRemotePrefs, saveRemotePrefs, type RemotePrefs } from './config';
 import { buildProfile, loadHistory, seenIds } from './history';
 
 export type AgentPick = {
@@ -38,7 +38,7 @@ export async function syncProfile(force = false) {
   const last = JSON.parse(localStorage.getItem(SYNC_KEY) || '{}');
   if (!force && last.sig === sig && Date.now() - (last.t || 0) < 6 * 3600_000) return;
   const p = buildProfile();
-  const s = loadSettings();
+  const s = effectiveSettings();
   await hub('/api/sync', {
     method: 'POST',
     body: JSON.stringify({
@@ -74,6 +74,7 @@ export async function getPicks(fresh = false): Promise<AgentPick[]> {
   if (!fresh && picksCache && Date.now() - picksCache.t < 5 * 60_000) return picksCache.v;
   const data = await hub('/api/picks');
   picksCache = { t: Date.now(), v: data.picks || [] };
+  if (data.preferences) saveRemotePrefs(data.preferences);
   return picksCache.v;
 }
 
@@ -110,13 +111,15 @@ export async function getLiveNow(fresh = false): Promise<{ live: Video[]; soon: 
   const label = new Map<string, string>();
   watchPicks.forEach((p, i) => channelIds[i] && label.set(channelIds[i], p.title || p.reason || ''));
 
-  const [fromWatched, fromPicks, fromSubs] = await Promise.all([
+  const [fromWatched, fromPicks, fromSubs, fromTopics] = await Promise.all([
     channelsUploads(channelIds, 6).catch(() => [] as Video[]),
     getVideos(picks.filter((p) => p.type === 'video' && p.videoId).map((p) => p.videoId!)).catch(() => [] as Video[]),
     getSubscriptionFeed().catch(() => [] as Video[]),
+    // Live topics set by ChatGPT, e.g. "chess tournament": searched about every 90 minutes.
+    Promise.all(loadRemotePrefs().liveTopics.slice(0, 3).map((q) => cachedLiveSearch(q).catch(() => [] as Video[]))).then((x) => x.flat()),
   ]);
   const seen = new Set<string>();
-  const all = [...fromWatched, ...fromPicks, ...fromSubs].filter((v) => !seen.has(v.id) && seen.add(v.id));
+  const all = [...fromWatched, ...fromPicks, ...fromTopics, ...fromSubs].filter((v) => !seen.has(v.id) && seen.add(v.id));
   const soonLimit = Date.now() + 24 * 3600_000;
   const watchedSet = new Set(channelIds);
   const rank = (v: Video) => (watchedSet.has(v.channelId) ? 0 : 1);
@@ -130,4 +133,12 @@ export async function getLiveNow(fresh = false): Promise<{ live: Video[]; soon: 
     .map((v) => ({ ...v, note: label.get(v.channelId) || v.note }));
   liveCache = { t: Date.now(), v: { live, soon } };
   return liveCache.v;
+}
+
+/** Clears every preference ChatGPT set (from Settings). */
+export async function resetAssistantPrefs(): Promise<RemotePrefs> {
+  await hub('/api/picks', { method: 'POST', body: JSON.stringify({ action: 'reset_preferences' }) });
+  saveRemotePrefs(undefined);
+  picksCache = null;
+  return loadRemotePrefs();
 }

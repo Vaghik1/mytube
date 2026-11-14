@@ -1,6 +1,6 @@
 // YouTube Data API v3 wrapper. Daily quota is 10,000 units: most calls cost 1, search costs 100.
 import { getAccessToken } from './auth';
-import { loadSettings } from './config';
+import { effectiveSettings, loadRemotePrefs, loadSettings } from './config';
 import { buildProfile, seedQuery, seenIds, tokens } from './history';
 
 const BASE = 'https://www.googleapis.com/youtube/v3/';
@@ -153,17 +153,24 @@ export function toVideo(v: any): Video {
   };
 }
 
-/** Applies your personal filters from config.ts / Settings. */
+/** Applies your personal filters (config.ts / Settings) and the ones ChatGPT set. */
 export function applyFilters(videos: Video[]): Video[] {
-  const s = loadSettings();
+  const s = effectiveSettings();
   const words = s.blockedKeywords.map((w) => w.toLowerCase()).filter(Boolean);
-  const chans = new Set(s.blockedChannels.map((c) => c.toLowerCase()));
+  const chans = new Set(s.blockedChannels.map((c) => c.toLowerCase().replace(/^@/, '')));
+  // A disliked topic hides a video when all of its words appear in the title or tags.
+  const disliked = s.dislikedTopics.map((t) => tokens(t)).filter((t) => t.length);
   return videos.filter((v) => {
     if (!v.id || v.title === 'Private video' || v.title === 'Deleted video') return false;
     if (s.hideShorts && !v.live && v.duration > 0 && v.duration <= 180) return false;
     if (chans.has(v.channelId.toLowerCase()) || chans.has(v.channelTitle.toLowerCase())) return false;
     const t = v.title.toLowerCase();
-    return !words.some((w) => t.includes(w));
+    if (words.some((w) => t.includes(w))) return false;
+    if (disliked.length) {
+      const have = new Set([...tokens(v.title), ...(v.tags || []).flatMap(tokens)]);
+      if (disliked.some((topic) => topic.every((w) => have.has(w)))) return false;
+    }
+    return true;
   });
 }
 
@@ -215,6 +222,18 @@ export async function search(q: string, pageToken?: string): Promise<Page<Video>
   const data = await yt('search', { part: 'snippet', type: 'video', q, maxResults: 24, pageToken });
   const ids = (data.items || []).map((i: any) => i.id?.videoId);
   return { items: applyFilters(await getVideos(ids)), next: data.nextPageToken };
+}
+
+/** Streams that are live right now for a search phrase (100 units; callers cache it). */
+export async function searchLive(q: string): Promise<Video[]> {
+  const data = await yt('search', { part: 'snippet', type: 'video', eventType: 'live', q, maxResults: 10 });
+  const ids = (data.items || []).map((i: any) => i.id?.videoId);
+  return (await getVideos(ids)).filter((v) => v.live);
+}
+
+/** Cached wrapper used by the live row of the feed. */
+export function cachedLiveSearch(q: string): Promise<Video[]> {
+  return cached(`live.q.${q.toLowerCase()}`, 90 * 60_000, () => searchLive(q));
 }
 
 // ── me / subscriptions ───────────────────────────────────────
@@ -284,6 +303,7 @@ async function getStarterFeed(): Promise<Video[]> {
     getSubscriptionFeed().catch(() => [] as Video[]),
     cached('fy.likedlist', 3600_000, () => getLiked().then((p) => p.items)).catch(() => [] as Video[]),
   ]);
+  const prefs = await preferenceVideos().catch(() => ({ fromChannels: [] as Video[], fromInterests: [] as Video[], favIds: [] }));
   const likedCh = [...new Set(liked.map((v) => v.channelId))].slice(0, 8);
   const fromLiked = await cached(`fy.liked.${likedCh.join(',')}`, 3600_000, () => channelsUploads(likedCh, 6)).catch(
     () => [] as Video[],
@@ -292,10 +312,8 @@ async function getStarterFeed(): Promise<Video[]> {
   const out: Video[] = [];
   const ids = new Set<string>();
   const push = (v?: Video) => v && !ids.has(v.id) && !seen.has(v.id) && (ids.add(v.id), out.push(v));
-  for (let i = 0; i < Math.max(subs.length, fromLiked.length); i++) {
-    push(subs[i]);
-    push(fromLiked[i]);
-  }
+  const lists = [subs, prefs.fromChannels, prefs.fromInterests, fromLiked];
+  for (let i = 0; i < Math.max(...lists.map((l) => l.length)); i++) for (const l of lists) push(l[i]);
   return applyFilters(out);
 }
 
@@ -404,6 +422,26 @@ export async function channelsUploads(ids: string[], perChannel: number): Promis
   return getVideos(pages.flatMap((p: any) => (p.items || []).map((i: any) => i.contentDetails.videoId)));
 }
 
+/** Videos from ChatGPT's preferences: favourite channels' uploads and interest searches. */
+async function preferenceVideos(): Promise<{ fromChannels: Video[]; fromInterests: Video[]; favIds: string[] }> {
+  const r = loadRemotePrefs();
+  const favIds = (
+    await Promise.all(r.favoriteChannels.slice(0, 15).map((c) => resolveChannelId(c).catch(() => undefined)))
+  ).filter(Boolean) as string[];
+  const [fromChannels, fromInterests] = await Promise.all([
+    favIds.length
+      ? cached(`fy.fav.${favIds.join(',')}`, 60 * 60_000, () => channelsUploads(favIds, 6)).catch(() => [] as Video[])
+      : Promise.resolve([] as Video[]),
+    // Each interest search costs 100 units, so at most 3 interests, each refreshed twice a day.
+    Promise.all(
+      r.interests
+        .slice(-3)
+        .map((q) => cached(`fy.q.${q}`, 12 * 3600_000, () => search(q).then((p) => p.items)).catch(() => [] as Video[])),
+    ).then((x) => x.flat()),
+  ]);
+  return { fromChannels, fromInterests, favIds };
+}
+
 export async function getForYou(): Promise<Video[]> {
   const agent = import('./agent');
   const [feed, picks, streams] = await Promise.all([
@@ -427,6 +465,7 @@ async function getLearnedFeed(): Promise<Video[]> {
   const topChannels = profile.channels.slice(0, 10);
   const queries = [...new Set(profile.seeds.slice(0, 3).map((w) => seedQuery(w, profile)).filter(Boolean))];
 
+  const prefs = await preferenceVideos().catch(() => ({ fromChannels: [] as Video[], fromInterests: [] as Video[], favIds: [] as string[] }));
   const [fromChannels, fromSearch, fromSubs] = await Promise.all([
     cached(`fy.ch.${topChannels.map((c) => c.id).join(',')}`, 60 * 60_000, () =>
       channelsUploads(topChannels.map((c) => c.id), 8),
@@ -447,6 +486,9 @@ async function getLearnedFeed(): Promise<Video[]> {
   const termTop = profile.terms.slice(0, 60);
   const maxT = termTop[0]?.score || 1;
   const termScore = new Map(termTop.map((t) => [t.term, t.score / maxT]));
+  // ChatGPT's interests count like your strongest topics; favourite channels like your top channel.
+  for (const interest of loadRemotePrefs().interests) for (const w of tokens(interest)) termScore.set(w, Math.max(termScore.get(w) || 0, 1));
+  for (const id of prefs.favIds) chScore.set(id, Math.max(chScore.get(id) || 0, 1));
   const subIds = new Set(fromSubs.map((v) => v.channelId));
 
   const scored = new Map<string, { v: Video; s: number }>();
@@ -468,7 +510,9 @@ async function getLearnedFeed(): Promise<Video[]> {
     }
   };
   add(fromChannels, 0.3);
+  add(prefs.fromChannels, 0.3);
   add(fromSearch, 0.2);
+  add(prefs.fromInterests, 0.2);
   add(fromSubs, 0);
 
   // Pick the best, but don't let one channel take over the screen.

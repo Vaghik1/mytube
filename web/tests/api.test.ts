@@ -11,7 +11,7 @@ import {
   toVideo,
   type Video,
 } from '../src/api';
-import { saveSettings, defaultSettings } from '../src/config';
+import { saveRemotePrefs, saveSettings, defaultSettings } from '../src/config';
 import { recordWatch } from '../src/history';
 import { calls, mockYouTube, signIn, ytVideo } from './youtube-mock';
 
@@ -79,6 +79,36 @@ describe('applyFilters (your personal rules)', () => {
   });
   it('drops private and deleted videos', () => {
     expect(applyFilters([v({ id: '1', title: 'Private video' }), v({ id: '2', title: 'Deleted video' }), v({ id: '' })])).toEqual([]);
+  });
+});
+
+describe("applyFilters with ChatGPT's preferences", () => {
+  it('hides disliked topics when all their words appear in title or tags', () => {
+    saveRemotePrefs({ dislikedTopics: ['celebrity gossip'] });
+    const list = [
+      v({ id: '1', title: 'Celebrity gossip of the week' }),
+      v({ id: '2', title: 'Weekly news', tags: ['celebrity', 'gossip'] }),
+      v({ id: '3', title: 'Celebrity chess match' }), // only one word: stays
+    ];
+    expect(applyFilters(list).map((x) => x.id)).toEqual(['3']);
+  });
+
+  it("merges ChatGPT's blocked channels and words with yours", () => {
+    saveSettings({ ...defaultSettings, blockedKeywords: ['prank'] });
+    saveRemotePrefs({ blockedChannels: ['Drama Channel'], blockedWords: ['reaction'] });
+    const list = [v({ id: '1', title: 'PRANK' }), v({ id: '2', title: 'My reaction' }), v({ id: '3', channelTitle: 'drama channel' }), v({ id: '4' })];
+    expect(applyFilters(list).map((x) => x.id)).toEqual(['4']);
+  });
+
+  it("ChatGPT's Shorts choice wins over yours, in both directions", () => {
+    const list = [v({ id: 's', duration: 40 })];
+    saveRemotePrefs({ hideShorts: true });
+    expect(applyFilters(list)).toEqual([]);
+    saveSettings({ ...defaultSettings, hideShorts: true });
+    saveRemotePrefs({ hideShorts: false });
+    expect(applyFilters(list)).toHaveLength(1);
+    saveRemotePrefs({});
+    expect(applyFilters(list)).toEqual([]); // back to your own setting
   });
 });
 
@@ -224,6 +254,25 @@ describe('For you', () => {
     const ids = (await getForYou()).map((x) => x.id);
     expect(ids.slice(0, 2)).toEqual(['a-live', 'gpt-1']);
     expect(ids.filter((id) => id === 'a-live')).toHaveLength(1); // not repeated further down
+  });
+
+  it("adds favourite channels' uploads and interest searches from ChatGPT", async () => {
+    saveRemotePrefs({ favoriteChannels: ['UC' + 'f'.repeat(22)], interests: ['physics'] });
+    const routes = subsRoutes(['a'], { a: ['a-1'], ['UC' + 'f'.repeat(22)]: ['fav-1'] });
+    routes.search = (p: URLSearchParams) => ({ items: p.get('q') === 'physics' ? [{ id: { videoId: 'phys-1' } }] : [] });
+    const f = mockYouTube(routes, { '/api/picks': () => ({ picks: [] }) });
+    const ids = (await getForYou()).map((x) => x.id);
+    expect(ids).toEqual(expect.arrayContaining(['a-1', 'fav-1', 'phys-1']));
+    // searched once, then cached
+    await getForYou();
+    expect(calls(f, 'search').filter((u) => u.searchParams.get('q') === 'physics')).toHaveLength(1);
+  });
+
+  it('searches at most 3 interests (YouTube quota)', async () => {
+    saveRemotePrefs({ interests: ['a1', 'b2', 'c3', 'd4', 'e5'] });
+    const f = mockYouTube(subsRoutes([], {}), { '/api/picks': () => ({ picks: [] }) });
+    await getForYou();
+    expect(calls(f, 'search').map((u) => u.searchParams.get('q')).sort()).toEqual(['c3', 'd4', 'e5']);
   });
 
   it('still works when the assistant hub is down', async () => {

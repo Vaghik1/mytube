@@ -70,12 +70,13 @@ describe('MCP connection (ChatGPT plugin)', () => {
     expect((await rpc('notifications/initialized')).status).toBe(202);
   });
 
-  it('lists the four tools with input schemas', async () => {
+  it('lists the five tools with input schemas', async () => {
     const { tools } = (await rpc('tools/list')).body.result;
     expect(tools.map((t: { name: string }) => t.name)).toEqual([
       'get_viewer_profile',
       'recommend_videos',
       'watch_channel_live',
+      'update_viewer_preferences',
       'stop_watching_channel_live',
     ]);
     for (const t of tools) expect(t.inputSchema.type).toBe('object');
@@ -248,5 +249,73 @@ describe('storage connection', () => {
     const r = await tool('get_viewer_profile', {});
     expect(r.isError).toBe(true);
     expect(r.content[0].text).toMatch(/storage is not connected/i);
+  });
+});
+
+describe('update_viewer_preferences', () => {
+  const prefs = async (args: unknown) => (await tool('update_viewer_preferences', args)).structuredContent;
+
+  it('adds interests, normalised and without duplicates', async () => {
+    const r = await prefs({ add_interests: ['Chess', ' tennis ', 'chess', 'Physics', 'AI'] });
+    expect(r.preferences.interests).toEqual(['chess', 'tennis', 'physics', 'ai']);
+  });
+
+  it('removes only what is asked and keeps the rest', async () => {
+    await prefs({ add_interests: ['chess', 'tennis'], add_blocked_words: ['prank'] });
+    const r = await prefs({ remove_interests: ['TENNIS'] });
+    expect(r.preferences.interests).toEqual(['chess']);
+    expect(r.preferences.blockedWords).toEqual(['prank']);
+  });
+
+  it('accepts YouTube channels as favourites and explains anything else', async () => {
+    const r = await prefs({ add_favorite_channels: ['https://www.youtube.com/@GothamChess', 'UC' + 'b'.repeat(22), 'chess.com'] });
+    expect(r.preferences.favoriteChannels).toEqual(['@GothamChess', 'UC' + 'b'.repeat(22)]);
+    expect(r.notes[0]).toMatch(/@handle/);
+  });
+
+  it('keeps at most 3 live topics (each costs YouTube quota)', async () => {
+    const r = await prefs({ add_live_topics: ['chess tournament', 'candidates chess', 'grand chess tour', 'tennis live'] });
+    expect(r.preferences.liveTopics).toEqual(['candidates chess', 'grand chess tour', 'tennis live']);
+    expect(r.notes.join(' ')).toMatch(/newest 3/);
+  });
+
+  it('turns Shorts off and back to the viewer\'s own choice', async () => {
+    expect((await prefs({ hide_shorts: true })).preferences.hideShorts).toBe(true);
+    expect((await prefs({ hide_shorts: null })).preferences.hideShorts).toBeUndefined();
+  });
+
+  it('can reset everything it set', async () => {
+    await prefs({ add_interests: ['chess'], add_disliked_topics: ['celebrity gossip'], hide_shorts: true });
+    const r = await prefs({ reset: true, add_interests: ['physics'] });
+    expect(r.preferences).toMatchObject({ interests: ['physics'], dislikedTopics: [] });
+    expect(r.preferences.hideShorts).toBeUndefined();
+  });
+
+  it('shows the preferences in the viewer profile', async () => {
+    await prefs({ add_disliked_topics: ['Celebrity Gossip'] });
+    const p = (await tool('get_viewer_profile', {})).structuredContent;
+    expect(p.preferences_you_set.dislikedTopics).toEqual(['celebrity gossip']);
+  });
+
+  it('gives them to the TV app with the picks; the TV can reset but not change them', async () => {
+    await prefs({ add_interests: ['chess'] });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ aud: 'client-123', expires_in: '3600' }))));
+    const tv = (init: RequestInit = {}) =>
+      new Request('https://mytube.test/api/hub?r=picks', { ...init, headers: { Authorization: 'Bearer ya29.tv' } });
+    expect((await (await hub.GET(tv())).json()).preferences.interests).toEqual(['chess']);
+    const denied = await hub.POST(tv({ method: 'POST', body: JSON.stringify({ action: 'update_preferences', add_interests: ['x'] }) }));
+    expect(denied.status).toBe(401);
+    const reset = await hub.POST(tv({ method: 'POST', body: JSON.stringify({ action: 'reset_preferences' }) }));
+    expect((await reset.json()).preferences.interests).toEqual([]);
+  });
+
+  it('can also be updated over REST with the API key', async () => {
+    const res = await hub.POST(
+      new Request(`https://mytube.test/api/hub?r=picks&key=${KEY}`, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'update_preferences', add_blocked_channels: ['Drama Channel'] }),
+      }),
+    );
+    expect((await res.json()).preferences.blockedChannels).toEqual(['Drama Channel']);
   });
 });

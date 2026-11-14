@@ -52,3 +52,55 @@ export function loadSettings(): Settings {
 export function saveSettings(s: Settings) {
   localStorage.setItem(KEY, JSON.stringify(s));
 }
+
+// ─────────────────────────────────────────────────────────────
+//  Preferences set by ChatGPT (fetched from the assistant hub).
+//  They are combined with yours; your own settings above stay as they are.
+// ─────────────────────────────────────────────────────────────
+
+export type RemotePrefs = {
+  interests: string[];
+  favoriteChannels: string[];
+  liveTopics: string[];
+  dislikedTopics: string[];
+  blockedChannels: string[];
+  blockedWords: string[];
+  hideShorts?: boolean;
+  updatedAt?: string;
+};
+
+const REMOTE_KEY = 'mytube.remotePrefs';
+export const emptyRemotePrefs = (): RemotePrefs => ({
+  interests: [],
+  favoriteChannels: [],
+  liveTopics: [],
+  dislikedTopics: [],
+  blockedChannels: [],
+  blockedWords: [],
+});
+
+export function loadRemotePrefs(): RemotePrefs {
+  try {
+    return { ...emptyRemotePrefs(), ...JSON.parse(localStorage.getItem(REMOTE_KEY) || '{}') };
+  } catch {
+    return emptyRemotePrefs();
+  }
+}
+
+export function saveRemotePrefs(p: Partial<RemotePrefs> | undefined) {
+  localStorage.setItem(REMOTE_KEY, JSON.stringify({ ...emptyRemotePrefs(), ...(p || {}) }));
+}
+
+/** Your settings combined with ChatGPT's: block lists are merged, its Shorts choice wins when set. */
+export function effectiveSettings(): Settings & { dislikedTopics: string[] } {
+  const s = loadSettings();
+  const r = loadRemotePrefs();
+  const uniq = (a: string[]) => [...new Set(a)];
+  return {
+    ...s,
+    hideShorts: r.hideShorts ?? s.hideShorts,
+    blockedChannels: uniq([...s.blockedChannels, ...r.blockedChannels]),
+    blockedKeywords: uniq([...s.blockedKeywords, ...r.blockedWords]),
+    dislikedTopics: r.dislikedTopics,
+  };
+}
