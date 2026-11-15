@@ -86,7 +86,9 @@ main::-webkit-scrollbar { display: none; }
 .card-title { margin-top: 1rem; font-size: 1.55rem; font-weight: 500; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 /* TV: a cut-off title on the focused card becomes one line that scrolls (keeps its two-line height). */
 .card-title.marquee { display: block; white-space: nowrap; min-height: 2.6em; }
-.card-title.marquee > span.scrolling { display: inline-block; animation: title-scroll var(--dur) linear infinite; will-change: transform; }
+/* inline-block so the text's full one-line width can be measured (an inline span reports 0) */
+.card-title.marquee > span { display: inline-block; }
+.card-title.marquee > span.scrolling { animation: title-scroll var(--dur) linear infinite; will-change: transform; }
 @keyframes title-scroll {
   0%, 15% { transform: translateX(0); }
   85%, 100% { transform: translateX(calc(-1 * var(--shift))); }
