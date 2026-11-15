@@ -1,9 +1,10 @@
 // Home and the player on a phone (touch). The TV version is in screens-tv.test.tsx.
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { loadSettings } from '../src/config';
 import { Home } from '../src/pages/Home';
-import { Watch } from '../src/pages/Watch';
+import { SUBTITLE_ENFORCE_MS, Watch } from '../src/pages/Watch';
 import { isTouch } from '../src/tv';
 import { installFakePlayer, liveRoutes } from './screens-fixtures';
 import { mockYouTube, signIn } from './youtube-mock';
@@ -42,6 +43,28 @@ describe('on a phone', () => {
     await waitFor(() => expect(players).toHaveLength(1));
     expect(players[0].opts.playerVars.controls).toBe(1);
     expect(players[0].opts.playerVars.fs).toBe(1);
+    delete (window as any).YT;
+  });
+
+  it("remembers subtitles turned on with YouTube's own CC button, like YouTube does", async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    mockYouTube(liveRoutes(), { '/api/picks': () => ({ picks: [] }) });
+    const players = installFakePlayer();
+    const view = render(
+      <MemoryRouter initialEntries={['/watch/live1']}>
+        <Routes>
+          <Route path="/watch/:id" element={<Watch />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(players).toHaveLength(1));
+    act(() => players[0].emit(1));
+    vi.setSystemTime(Date.now() + SUBTITLE_ENFORCE_MS + 1000);
+    act(() => players[0].youtubeTurnsSubtitlesOn('fr')); // the viewer tapped CC and picked French
+    expect(players[0].subtitles).toBe('fr'); // not undone
+    view.unmount();
+    expect(loadSettings()).toMatchObject({ subtitles: true, subtitleLang: 'fr' });
+    vi.useRealTimers();
     delete (window as any).YT;
   });
 

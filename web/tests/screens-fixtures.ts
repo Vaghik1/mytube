@@ -59,6 +59,22 @@ export function installFakePlayer() {
     getDuration() { return 600; }
     destroyed = false;
     destroy() { this.destroyed = true; }
+    // Subtitles, as YouTube's player exposes them.
+    tracks: { languageCode: string }[] = [{ languageCode: 'en' }, { languageCode: 'fr' }];
+    track: { languageCode?: string } = {};
+    modules = new Set<string>();
+    loadModule(m: string) { this.modules.add(m); }
+    unloadModule(m: string) { this.modules.delete(m); if (m === 'captions') this.track = {}; }
+    getOptions() { return [...this.modules]; }
+    getOption(m: string, o: string) {
+      if (m !== 'captions' || !this.modules.has('captions')) return undefined;
+      return o === 'tracklist' ? this.tracks : o === 'track' ? this.track : undefined;
+    }
+    setOption(m: string, o: string, v: any) { if (m === 'captions' && o === 'track') this.track = v; }
+    /** Test helper: subtitles shown right now (language code), or undefined. */
+    get subtitles() { return this.modules.has('captions') ? this.track.languageCode : undefined; }
+    /** Test helper: YouTube switched subtitles on by itself (e.g. remembered from a list preview). */
+    youtubeTurnsSubtitlesOn(lang = 'en') { this.modules.add('captions'); this.track = { languageCode: lang }; this.opts.events?.onApiChange?.({ target: this }); }
   }
   (window as any).YT = { Player: FakePlayer };
   return players;

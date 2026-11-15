@@ -25,6 +25,13 @@ export type Settings = {
   zoomPreviews: boolean;
   /** Play a muted preview of the video you stop on while browsing. */
   previewOnBrowse: boolean;
+  /**
+   * Subtitles in the player. Like YouTube, the choice sticks: it applies to every video until
+   * you change it (list previews always show subtitles regardless).
+   */
+  subtitles: boolean;
+  /** Subtitle language last chosen (used when the video has it). */
+  subtitleLang: string;
 };
 
 export const defaultSettings: Settings = {
@@ -38,6 +45,8 @@ export const defaultSettings: Settings = {
   skipSponsors: true,
   betterTitles: true,
   zoomPreviews: true,
+  subtitles: false,
+  subtitleLang: 'en',
 };
 
 export const REGIONS: [string, string][] = [

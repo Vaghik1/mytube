@@ -70,6 +70,9 @@ export function Settings() {
             Enlarge previews: {s.zoomPreviews ? 'On' : 'Off'}
           </button>
         )}
+        <button className={`chip focusable${s.subtitles ? ' active' : ''}`} onClick={() => update({ subtitles: !s.subtitles })}>
+          Subtitles: {s.subtitles ? 'On' : 'Off'}
+        </button>
         <button className={`chip focusable${s.skipSponsors ? ' active' : ''}`} onClick={() => update({ skipSponsors: !s.skipSponsors })}>
           Skip sponsors: {s.skipSponsors ? 'On' : 'Off'}
         </button>

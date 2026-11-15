@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getChannelVideos, getForYou, getRating, getVideo, getVideos, rate, type Video } from '../api';
-import { loadSettings } from '../config';
+import { loadSettings, saveSettings } from '../config';
 import { CATEGORY_LABEL, getBranding, getSkipSegments, segmentAt, type Segment } from '../community';
 import { loadYTApi } from '../yt';
 import { clearPreviewPos, markLiked, notInterested, recordWatch, seenIds, startPoint, startedWatching } from '../history';
@@ -25,6 +25,43 @@ const ERRORS: Record<number, string> = {
 };
 
 type Mode = 'player' | 'details';
+
+/** After a video starts, how long the player keeps applying your subtitle choice (YouTube loads them late). */
+export const SUBTITLE_ENFORCE_MS = 5000;
+
+type Track = { languageCode?: string };
+const tracksOf = (p: any): Track[] => {
+  try {
+    return p?.getOption?.('captions', 'tracklist') || [];
+  } catch {
+    return [];
+  }
+};
+const currentTrack = (p: any): Track | undefined => {
+  try {
+    return p?.getOption?.('captions', 'track');
+  } catch {
+    return undefined;
+  }
+};
+
+/** Turns the player's subtitles on (in your language, else the video's first) or off. */
+export function applySubtitles(p: any, on: boolean, lang: string) {
+  try {
+    if (on) {
+      p.loadModule?.('captions');
+      const list = tracksOf(p);
+      const pick = list.find((t) => t.languageCode === lang)?.languageCode || list[0]?.languageCode || lang;
+      if (currentTrack(p)?.languageCode !== pick) p.setOption?.('captions', 'track', { languageCode: pick });
+    } else if (currentTrack(p)?.languageCode || (p.getOptions?.() || []).some((m: string) => m === 'captions' || m === 'cc')) {
+      p.setOption?.('captions', 'track', {});
+      p.unloadModule?.('captions');
+      p.unloadModule?.('cc');
+    }
+  } catch {
+    /* player not ready, or the video has no subtitles */
+  }
+}
 
 export const SAME_CHANNEL_COUNT = 4;
 
@@ -81,6 +118,45 @@ export function Watch() {
   const [upNext, setUpNext] = useState<Video[]>([]);
   const [descOpen, setDescOpen] = useState(false);
   const osdTimer = useRef<number>(0);
+  const [subtitles, setSubtitles] = useState(() => loadSettings().subtitles);
+  /** Until when the player keeps applying the subtitle choice for this video (0 = not started yet). */
+  const subsUntil = useRef(0);
+  const applySubs = () => {
+    const s = loadSettings();
+    if (player.current) applySubtitles(player.current, s.subtitles, s.subtitleLang);
+  };
+  // TV: YouTube's controls are hidden, so only your choice counts, always. Phone: after the first
+  // seconds, YouTube's own CC button is yours to use.
+  const enforcingSubs = () => !isTouch || subsUntil.current === 0 || Date.now() < subsUntil.current;
+  /** Phone: remember a choice made with YouTube's own CC button, as YouTube does. */
+  const rememberSubs = () => {
+    const p = player.current;
+    if (!isTouch || !p || enforcingSubs() || !tracksOf(p).length) return; // no subtitles in this video: nothing to learn
+    const lang = currentTrack(p)?.languageCode;
+    const s = loadSettings();
+    if (!!lang !== s.subtitles || (lang && lang !== s.subtitleLang)) {
+      saveSettings({ ...s, subtitles: !!lang, subtitleLang: lang || s.subtitleLang });
+      setSubtitles(!!lang);
+    }
+  };
+  const toggleSubtitles = () => {
+    const s = { ...loadSettings(), subtitles: !loadSettings().subtitles };
+    saveSettings(s);
+    setSubtitles(s.subtitles);
+    if (player.current) applySubtitles(player.current, s.subtitles, s.subtitleLang);
+    flash(s.subtitles ? 'Subtitles on' : 'Subtitles off');
+    if (s.subtitles) {
+      // YouTube lists the tracks only once its captions module is in: check a moment later.
+      window.setTimeout(() => {
+        const p = player.current;
+        if (!loadSettings().subtitles || !p) return;
+        if (tracksOf(p).length) applySubtitles(p, true, s.subtitleLang);
+        else flash('This video has no subtitles');
+      }, 1500);
+    }
+  };
+  const subsRef = useRef({ applySubs, enforcingSubs, rememberSubs, toggleSubtitles });
+  subsRef.current = { applySubs, enforcingSubs, rememberSubs, toggleSubtitles };
 
   const modeRef = useRef(mode);
   modeRef.current = mode;
@@ -132,6 +208,8 @@ export function Watch() {
           fs: isTouch ? 1 : 0,
           rel: 0,
           iv_load_policy: 3,
+          ...(loadSettings().subtitles ? { cc_load_policy: 1 } : {}),
+          cc_lang_pref: loadSettings().subtitleLang,
           playsinline: 1,
           modestbranding: 1,
           origin: window.location.origin,
@@ -139,9 +217,16 @@ export function Watch() {
         events: {
           onReady: (e: any) => {
             setReady(true);
+            subsRef.current.applySubs();
             e.target.playVideo();
           },
+          // Subtitles load late (and YouTube may bring back ones a list preview turned on): apply your choice.
+          onApiChange: () => subsRef.current.enforcingSubs() && subsRef.current.applySubs(),
           onStateChange: (e: any) => {
+            if (e.data === 1 && subsUntil.current === 0) {
+              subsUntil.current = Date.now() + SUBTITLE_ENFORCE_MS;
+              subsRef.current.applySubs();
+            }
             // A sponsor skip seeks, which briefly buffers: don't flash the play button and timeline.
             if (Date.now() < silentUntil.current && e.data !== 0) {
               if (e.data === 1) silentUntil.current = 0;
@@ -160,6 +245,7 @@ export function Watch() {
     });
     return () => {
       destroyed = true;
+      subsRef.current.rememberSubs(); // before the player goes away
       try {
         player.current?.destroy();
       } catch {
@@ -181,6 +267,7 @@ export function Watch() {
 
   // Load video data + switch player when the id changes.
   useEffect(() => {
+    subsUntil.current = 0; // a new video: apply the subtitle choice again when it starts
     setVideo(undefined);
     setError(null);
     setMode('player');
@@ -255,6 +342,7 @@ export function Watch() {
     lastSaved.current = 0;
     started.current = false;
     return () => {
+      subsRef.current.rememberSubs();
       if (videoRef.current) {
         const p = player.current;
         // Ended: count as finished even if YouTube reports a time just short of the end.
@@ -311,6 +399,11 @@ export function Watch() {
           return true;
         case 'ArrowDown':
           setMode('details');
+          return true;
+        case 'ClosedCaptionToggle':
+        case 'Subtitle':
+          subsRef.current.toggleSubtitles();
+          showOsd();
           return true;
       }
       return false;
@@ -369,8 +462,9 @@ export function Watch() {
             <div className="osd-time">
               {fmtDuration(time.cur) || '0:00'} / {fmtDuration(time.dur)}
             </div>
+            {subtitles && <div className="osd-cc">CC</div>}
           </div>
-          <div className="osd-hint">OK play/pause • ◀ ▶ 10s • ▼ more</div>
+          <div className="osd-hint">OK play/pause • ◀ ▶ 10s • ▼ more &amp; subtitles</div>
         </div>
       )}
 
@@ -420,6 +514,9 @@ export function Watch() {
                 </button>
               )}
               {video && <SubscribeButton channelId={video.channelId} />}
+              <button className={`btn focusable${subtitles ? ' on' : ''}`} onClick={toggleSubtitles}>
+                Subtitles: {subtitles ? 'On' : 'Off'}
+              </button>
               {isTouch && (
                 <button
                   className="btn focusable"

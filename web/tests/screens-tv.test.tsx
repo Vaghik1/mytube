@@ -8,6 +8,7 @@ vi.hoisted(() => {
   delete (window as any).ontouchstart;
 });
 
+import { loadSettings } from '../src/config';
 import { Watch } from '../src/pages/Watch';
 import { handleBack, initTV, isTouch } from '../src/tv';
 import { installFakePlayer, liveRoutes } from './screens-fixtures';
@@ -70,6 +71,49 @@ describe('player on a TV', () => {
     act(() => void (handled = handleBack()));
     expect(handled).toBe(true);
     await waitFor(() => expect(screen.queryByText('Not interested')).toBeNull());
+  });
+
+  it('subtitles are off by default, even when YouTube brings back ones a list preview turned on', async () => {
+    const players = installFakePlayer();
+    openPlayer();
+    await waitFor(() => expect(players).toHaveLength(1));
+    act(() => players[0].emit(1));
+    act(() => players[0].youtubeTurnsSubtitlesOn());
+    expect(players[0].subtitles).toBeUndefined();
+  });
+
+  it('a Subtitles button in ▼ details turns them on and off, and the choice sticks for the next video', async () => {
+    const players = installFakePlayer();
+    const view = openPlayer();
+    await waitFor(() => expect(players).toHaveLength(1));
+    act(() => players[0].emit(1));
+    key('ArrowDown');
+    fireEvent.click(await screen.findByText('Subtitles: Off'));
+    expect(players[0].subtitles).toBe('en');
+    expect(screen.getByText('Subtitles: On')).toBeTruthy();
+    expect(loadSettings().subtitles).toBe(true);
+    view.unmount();
+
+    // Next video: on from the start, in the remembered language (English).
+    openPlayer();
+    await waitFor(() => expect(players).toHaveLength(2));
+    expect(players[1].opts.playerVars.cc_load_policy).toBe(1);
+    act(() => players[1].emit(1));
+    expect(players[1].subtitles).toBe('en');
+    key('ArrowDown');
+    fireEvent.click(await screen.findByText('Subtitles: On'));
+    expect(players[1].subtitles).toBeUndefined();
+    expect(loadSettings().subtitles).toBe(false);
+  });
+
+  it("the remote's CC key toggles subtitles too", async () => {
+    const players = installFakePlayer();
+    openPlayer();
+    await waitFor(() => expect(players).toHaveLength(1));
+    act(() => players[0].emit(1));
+    key('ClosedCaptionToggle');
+    expect(players[0].subtitles).toBe('en');
+    expect(await screen.findByText('Subtitles on')).toBeTruthy();
   });
 
   it('records how long you watched when you leave', async () => {
