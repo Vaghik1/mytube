@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import type { Video } from '../api';
@@ -24,6 +24,48 @@ export function zoomTransform(r: { left: number; top: number; width: number; hei
 
 export type Queue = { ids: string[]; index: number; title?: string };
 
+/** TV: how long the remote must rest on a card before a cut-off title starts scrolling. */
+export const MARQUEE_DELAY_MS = 1500;
+/** Scrolling speed of a long title, in pixels per second. */
+const MARQUEE_PX_PER_S = 60;
+
+/**
+ * The card's title. On TV, once the card has been focused for a moment (`active`) and the title
+ * doesn't fit in its two lines, it turns into one line that slowly scrolls to show the rest,
+ * pausing at each end, and repeats until you move on.
+ */
+function CardTitle({ text, active }: { text: string; active: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const span = useRef<HTMLSpanElement>(null);
+  const [scroll, setScroll] = useState<CSSProperties | null>(null);
+  const [marquee, setMarquee] = useState(false);
+
+  // Start only if the two-line title is actually cut off.
+  useEffect(() => {
+    const el = ref.current;
+    setMarquee(!!active && !!el && el.scrollHeight > el.clientHeight + 1);
+    if (!active) setScroll(null);
+  }, [active, text]);
+
+  // In one-line mode: how far to slide so the end of the title comes into view.
+  useLayoutEffect(() => {
+    if (!marquee || !ref.current || !span.current) return;
+    const shift = span.current.scrollWidth - ref.current.clientWidth;
+    if (shift <= 0) return setScroll(null);
+    // The slide takes 70% of each loop; the rest is the pause at the start and at the end.
+    const dur = Math.max(4, shift / MARQUEE_PX_PER_S / 0.7);
+    setScroll({ ['--shift' as string]: `${shift}px`, ['--dur' as string]: `${dur.toFixed(1)}s` });
+  }, [marquee, text]);
+
+  return (
+    <div className={`card-title${marquee ? ' marquee' : ''}`} ref={ref}>
+      <span ref={span} style={scroll || undefined} className={scroll ? 'scrolling' : undefined}>
+        {text}
+      </span>
+    </div>
+  );
+}
+
 export function VideoCard({ v, queue, autoFocus }: { v: Video; queue?: Queue; autoFocus?: boolean }) {
   const nav = useNavigate();
   const previewing = usePreviewActive(v.id);
@@ -31,6 +73,10 @@ export function VideoCard({ v, queue, autoFocus }: { v: Video; queue?: Queue; au
   const b = useBranding(v);
   const thumbRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState<CSSProperties | null>(null);
+  // TV: the remote has rested on this card for a moment (long titles start scrolling).
+  const [dwell, setDwell] = useState(false);
+  const dwellTimer = useRef(0);
+  useEffect(() => () => window.clearTimeout(dwellTimer.current), []);
 
   // Phone: once the preview is really playing, bring it to the middle of the screen.
   const onReveal = () => {
@@ -54,6 +100,15 @@ export function VideoCard({ v, queue, autoFocus }: { v: Video; queue?: Queue; au
       data-video-id={v.id}
       className={`card focusable${zoom ? ' zoom-host' : ''}`}
       data-autofocus={autoFocus || undefined}
+      onFocus={() => {
+        if (isTouch) return;
+        window.clearTimeout(dwellTimer.current);
+        dwellTimer.current = window.setTimeout(() => setDwell(true), MARQUEE_DELAY_MS);
+      }}
+      onBlur={() => {
+        window.clearTimeout(dwellTimer.current);
+        setDwell(false);
+      }}
       onClick={() => nav(`/watch/${v.id}`, { state: { queue } })}
     >
       {zoom &&
@@ -96,7 +151,7 @@ export function VideoCard({ v, queue, autoFocus }: { v: Video; queue?: Queue; au
           </span>
         )}
       </div>
-      <div className="card-title">{b.title}</div>
+      <CardTitle text={b.title} active={dwell} />
       <div className="card-meta">{v.channelTitle}</div>
       <div className="card-meta">
         {v.watchedAt
