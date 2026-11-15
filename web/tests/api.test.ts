@@ -253,7 +253,7 @@ describe('For you', () => {
     expect(feed[2].note).toBe('Great endgame');
   });
 
-  it('puts live streams from your subscriptions first, then the merged list', async () => {
+  it('gives live streams no special place: they are merged like any other video', async () => {
     const routes = subsRoutes(['a'], { a: ['a-1', 'a-live'] });
     const videos = routes.videos;
     routes.videos = (p: URLSearchParams) => {
@@ -264,7 +264,7 @@ describe('For you', () => {
       '/api/picks': () => ({ picks: [{ id: 'p', type: 'video', videoId: 'gpt-1', reason: 'r', status: 'new' }] }),
     });
     const ids = (await getForYou()).map((x) => x.id);
-    expect(ids).toEqual(['a-live', 'a-1', 'gpt-1']);
+    expect(ids).toEqual(['a-1', 'a-live', 'gpt-1']);
     expect(ids.filter((id) => id === 'a-live')).toHaveLength(1); // not repeated further down
   });
 

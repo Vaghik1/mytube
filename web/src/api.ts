@@ -318,7 +318,7 @@ function roundRobin(lists: Video[][], seen: Set<string>, ids = new Set<string>()
   return applyFilters(out);
 }
 
-async function getStarterFeed(): Promise<Streams> {
+async function getStarterFeed(extra: Promise<Video[]>): Promise<Streams> {
   const [subs, liked] = await Promise.all([
     getSubscriptionFeed().catch(() => [] as Video[]),
     cached('fy.likedlist', 3600_000, () => getLiked().then((p) => p.items)).catch(() => [] as Video[]),
@@ -331,7 +331,7 @@ async function getStarterFeed(): Promise<Streams> {
   const seen = seenIds();
   const ids = new Set<string>();
   const mine = roundRobin([subs, fromLiked], seen, ids);
-  const gpt = roundRobin([prefs.fromChannels, prefs.fromInterests], seen, ids);
+  const gpt = roundRobin([prefs.fromChannels, prefs.fromInterests, await extra], seen, ids);
   return { mine, gpt };
 }
 
@@ -557,27 +557,30 @@ export function weave(mine: Video[], gpt: Video[], minePerGpt = MINE_PER_GPT): V
 
 export async function getForYou(): Promise<Video[]> {
   const agent = import('./agent');
-  const [feed, picks, streams] = await Promise.all([
-    getLearnedFeed(),
+  // Live and upcoming streams from channels/topics ChatGPT asked to watch get no special place:
+  // they are candidates like any other video and compete on the same score.
+  const streams = agent
+    .then((m) => m.getLiveNow())
+    .then((s) => [...s.live, ...s.soon])
+    .catch(() => [] as Video[]);
+  const [feed, picks] = await Promise.all([
+    getLearnedFeed(streams),
     agent.then((m) => m.getPickVideos()).catch(() => [] as Video[]),
-    agent.then((m) => m.getLiveNow()).catch(() => ({ live: [] as Video[], soon: [] as Video[] })),
   ]);
   // ChatGPT's share: its hand-picked videos alternating with its favourite channels / interests.
   // Videos you've scrolled past many times drift a few places down (gently, never hidden).
   const gpt = demoteIgnored(weave(applyFilters(picks), feed.gpt, 1));
-  // Streams that are live right now lead the list; then your videos and ChatGPT's, merged.
-  const mine = [...streams.soon.slice(0, 3), ...demoteIgnored(feed.mine)];
-  const merged = weave(mine, gpt);
+  const merged = weave(demoteIgnored(feed.mine), gpt);
   // Videos you started but haven't finished come back for a few days, a little way down, never at the top.
   const cont = await continueVideos();
   CONTINUE_SLOTS.forEach((slot, i) => cont[i] && merged.splice(Math.min(slot, merged.length), 0, cont[i]));
   const out: Video[] = [];
   const ids = new Set<string>();
-  for (const v of [...streams.live, ...merged]) if (!ids.has(v.id)) ids.add(v.id), out.push(v);
+  for (const v of merged) if (!ids.has(v.id)) ids.add(v.id), out.push(v);
   return out;
 }
 
-/** Where unfinished videos go in For you (positions after any live streams): 4th, 10th and 18th. */
+/** Where unfinished videos go in For you: 4th, 10th and 18th. */
 export const CONTINUE_SLOTS = [3, 9, 17];
 
 async function continueVideos(): Promise<Video[]> {
@@ -587,15 +590,15 @@ async function continueVideos(): Promise<Video[]> {
   return applyFilters(vids);
 }
 
-async function getLearnedFeed(): Promise<Streams> {
+async function getLearnedFeed(extra: Promise<Video[]>): Promise<Streams> {
   const profile = buildProfile();
-  if (profile.watches < 3) return getStarterFeed();
+  if (profile.watches < 3) return getStarterFeed(extra);
 
   const topChannels = profile.channels.slice(0, 10);
   const queries = [...new Set(profile.seeds.slice(0, 3).map((w) => seedQuery(w, profile)).filter(Boolean))];
 
   const prefs = await preferenceVideos().catch(() => ({ fromChannels: [] as Video[], fromInterests: [] as Video[], favIds: [] as string[] }));
-  const [fromChannels, fromSearch, fromSubs] = await Promise.all([
+  const [fromChannels, fromSearch, fromSubs, fromLive] = await Promise.all([
     cached(`fy.ch.${topChannels.map((c) => c.id).join(',')}`, 60 * 60_000, () =>
       channelsUploads(topChannels.map((c) => c.id), 8),
     ).catch(() => [] as Video[]),
@@ -606,6 +609,7 @@ async function getLearnedFeed(): Promise<Streams> {
       ),
     ).then((r) => r.flat()),
     getSubscriptionFeed().catch(() => [] as Video[]),
+    extra,
   ]);
 
   // Score every candidate against your taste profile.
@@ -644,6 +648,7 @@ async function getLearnedFeed(): Promise<Streams> {
   add(fromSubs, 0);
   add(prefs.fromChannels, 0.3, true);
   add(prefs.fromInterests, 0.2, true);
+  add(fromLive, 0, true); // streams from channels/topics ChatGPT watches (yours are already in fromSubs)
 
   const all = [...scored.values()];
   return { mine: diverse(all.filter((c) => !c.gpt)), gpt: diverse(all.filter((c) => c.gpt)) };

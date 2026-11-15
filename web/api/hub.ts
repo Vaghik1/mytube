@@ -393,7 +393,7 @@ const TOOLS = [
     name: 'watch_channel_live',
     title: 'Feature a channel\'s live streams',
     description:
-      "Tells MyTube to watch YouTube channels for live (and soon-starting) broadcasts and put them at the top of the viewer's video list whenever they open MyTube. Use for official channels that stream events the viewer cares about (e.g. major chess tournaments). Give the channel as @handle, channel URL or UC… id; optionally an end date when the event is over. The app only marks something LIVE when YouTube reports it as live, so replays are never shown as live.",
+      "Tells MyTube to watch YouTube channels for live (and soon-starting) broadcasts and add them to the viewer's video list, where they are ranked like any other video (no special place at the top). Use for official channels that stream events the viewer cares about (e.g. major chess tournaments). Give the channel as @handle, channel URL or UC… id; optionally an end date when the event is over. The app only marks something LIVE when YouTube reports it as live, so replays are never shown as live.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -423,7 +423,7 @@ const TOOLS = [
     name: 'update_viewer_preferences',
     title: 'Update the viewer\'s MyTube preferences',
     description:
-      "Changes what MyTube shows the viewer. Interests are searched for and ranked higher; favourite channels' new uploads are added; live topics are searched on YouTube for streams that are live right now (about every 90 minutes, max 3 topics) and put at the top; disliked topics and blocked channels/words are hidden; hide_shorts hides videos of 3 minutes or less. Use add_* / remove_* lists (only the changes), hide_shorts true/false (null = back to the viewer's own setting), or reset: true to clear everything you set before. Returns the full current preferences.",
+      "Changes what MyTube shows the viewer. Interests are searched for and ranked higher; favourite channels' new uploads are added; live topics are searched on YouTube for streams that are live right now (about every 90 minutes, max 3 topics) and ranked with the other videos; disliked topics and blocked channels/words are hidden; hide_shorts hides videos of 3 minutes or less. Use add_* / remove_* lists (only the changes), hide_shorts true/false (null = back to the viewer's own setting), or reset: true to clear everything you set before. Returns the full current preferences.",
     inputSchema: {
       type: 'object',
       properties: {
