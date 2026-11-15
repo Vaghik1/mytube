@@ -70,6 +70,8 @@ export function Watch() {
   const segments = useRef<Segment[]>([]);
   const skippedSeg = useRef(new Set<string>());
   const noticeTimer = useRef(0);
+  /** Until this time, player state blips (buffering etc.) come from an automatic skip: keep the OSD hidden. */
+  const silentUntil = useRef(0);
   const flash = (text: string) => {
     setNotice(text);
     window.clearTimeout(noticeTimer.current);
@@ -140,6 +142,11 @@ export function Watch() {
             e.target.playVideo();
           },
           onStateChange: (e: any) => {
+            // A sponsor skip seeks, which briefly buffers: don't flash the play button and timeline.
+            if (Date.now() < silentUntil.current && e.data !== 0) {
+              if (e.data === 1) silentUntil.current = 0;
+              return;
+            }
             setPlaying(e.data === 1);
             if (e.data === 1) setError(null);
             if (e.data === 0) {
@@ -225,6 +232,7 @@ export function Watch() {
         const seg = segmentAt(segments.current, p.getCurrentTime() || 0, skippedSeg.current);
         if (seg) {
           skippedSeg.current.add(seg.id);
+          silentUntil.current = Date.now() + 3000;
           p.seekTo(seg.end, true);
           flash(CATEGORY_LABEL[seg.category] || 'Skipped segment');
         }
@@ -265,6 +273,7 @@ export function Watch() {
       if (modeRef.current !== 'player' || errorRef.current) return false;
       const p = player.current;
       if (!p?.getPlayerState) return false;
+      silentUntil.current = 0; // you pressed something: show what really happens
       const seek = (d: number) => {
         p.seekTo(Math.max(0, (p.getCurrentTime() || 0) + d), true);
         showOsd();
