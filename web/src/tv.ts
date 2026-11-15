@@ -76,11 +76,36 @@ export function focusFirst(): boolean {
   return !!pick;
 }
 
+/**
+ * Video grids read like text: Right at the end of a row goes to the first card of the next row,
+ * Left at the start of a row to the last card of the row above. Returns the card to go to, if any.
+ * Left on the very first card is left to normal navigation, so it still reaches the side menu.
+ */
+function wrapInGrid(active: HTMLElement, dir: Dir, all: HTMLElement[]): HTMLElement | undefined {
+  if (dir !== 'left' && dir !== 'right') return undefined;
+  const grid = active.closest('.grid');
+  if (!grid) return undefined;
+  const cards = all.filter((el) => grid.contains(el));
+  const i = cards.indexOf(active);
+  const other = cards[dir === 'right' ? i + 1 : i - 1];
+  if (i < 0 || !other) return undefined;
+  const r = active.getBoundingClientRect();
+  const c = other.getBoundingClientRect();
+  // Only when the neighbour in reading order is on another row (otherwise normal navigation is right).
+  const otherRow = dir === 'right' ? c.top >= r.bottom - 4 : c.bottom <= r.top + 4;
+  return otherRow ? other : undefined;
+}
+
 function move(dir: Dir) {
   const active = document.activeElement as HTMLElement | null;
   const all = candidates();
   if (!active || active === document.body || !all.includes(active)) {
     focusFirst();
+    return;
+  }
+  const wrapped = wrapInGrid(active, dir, all);
+  if (wrapped) {
+    focusEl(wrapped);
     return;
   }
   const r = active.getBoundingClientRect();

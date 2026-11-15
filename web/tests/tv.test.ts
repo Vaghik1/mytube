@@ -71,12 +71,15 @@ describe('remote control navigation (grid)', () => {
     box('nav', 0, 0, 80, 60);
     const main = document.createElement('main');
     document.body.appendChild(main);
-    box('a', 200, 0, 100, 60, main);
-    box('b', 320, 0, 100, 60, main);
-    box('c', 440, 0, 100, 60, main);
-    box('d', 200, 100, 100, 60, main);
-    box('e', 320, 100, 100, 60, main);
-    box('f', 440, 100, 100, 60, main);
+    const grid = document.createElement('div');
+    grid.className = 'grid';
+    main.appendChild(grid);
+    box('a', 200, 0, 100, 60, grid);
+    box('b', 320, 0, 100, 60, grid);
+    box('c', 440, 0, 100, 60, grid);
+    box('d', 200, 100, 100, 60, grid);
+    box('e', 320, 100, 100, 60, grid);
+    box('f', 440, 100, 100, 60, grid);
   });
 
   it('focuses the first card in the main area when nothing is focused', () => {
@@ -111,10 +114,22 @@ describe('remote control navigation (grid)', () => {
     expect(focused()).toBe('b');
   });
 
-  it('stays put at the edge instead of jumping somewhere odd', () => {
+  it('Right at the end of a row goes to the first card of the next row', () => {
     document.getElementById('c')!.focus();
     press('ArrowRight');
+    expect(focused()).toBe('d');
+  });
+
+  it('Left at the start of a row goes to the last card of the row above', () => {
+    document.getElementById('d')!.focus();
+    press('ArrowLeft');
     expect(focused()).toBe('c');
+  });
+
+  it('stays put at the end of the last row', () => {
+    document.getElementById('f')!.focus();
+    press('ArrowRight');
+    expect(focused()).toBe('f');
   });
 
   it('OK on a non-button card clicks it', () => {
