@@ -2,15 +2,13 @@
 //  • Phone: when scrolling stops, the card nearest the middle of the screen (like YouTube).
 //    At the very top of a list the first card can't reach the middle, so it plays instead
 //    (and likewise the last card at the very bottom).
-//  • TV: the card the remote has rested on for a moment.
+//  • TV: never (previews are a phone feature).
 import { useSyncExternalStore } from 'react';
 import { loadSettings } from './config';
 import { isTouch } from './tv';
 import { loadYTApi } from './yt';
 
 export const SCROLL_IDLE_MS = 350;
-// TV sticks are slow to start a player; waiting a little longer keeps moving through the list smooth.
-export const FOCUS_DWELL_MS = 1500;
 
 let active: string | null = null;
 const listeners = new Set<() => void>();
@@ -78,8 +76,9 @@ export function pickPreviewCard(): string | null {
   return best?.id ?? null;
 }
 
-/** Starts watching scrolling (phone) or focus (TV). Returns a function that stops it. */
+/** Starts watching scrolling (phone only; TVs get no previews). Returns a function that stops it. */
 export function startPreviews(): () => void {
+  if (!isTouch) return () => setPreview(null);
   // Load YouTube's player code now, so the first preview starts without waiting for it.
   if (allowed()) void loadYTApi();
   let timer = 0;
@@ -88,34 +87,19 @@ export function startPreviews(): () => void {
     timer = window.setTimeout(fn, ms);
   };
 
-  if (isTouch) {
-    const onScroll = () => {
-      setPreview(null);
-      later(() => allowed() && setPreview(pickPreviewCard()), SCROLL_IDLE_MS);
-    };
-    // The page scrolls inside <main>, so listen in the capture phase.
-    document.addEventListener('scroll', onScroll, true);
-    // Also preview something when a list first appears, without scrolling.
-    const onLoad = () => later(() => allowed() && !active && setPreview(pickPreviewCard()), SCROLL_IDLE_MS);
-    const mo = new MutationObserver(onLoad);
-    mo.observe(document.body, { childList: true, subtree: true });
-    return () => {
-      document.removeEventListener('scroll', onScroll, true);
-      mo.disconnect();
-      window.clearTimeout(timer);
-      setPreview(null);
-    };
-  }
-
-  const onFocus = (e: FocusEvent) => {
+  const onScroll = () => {
     setPreview(null);
-    const card = (e.target as HTMLElement)?.closest?.<HTMLElement>('[data-video-id]');
-    if (!card) return window.clearTimeout(timer);
-    later(() => allowed() && document.activeElement === card && setPreview(card.dataset.videoId!), FOCUS_DWELL_MS);
+    later(() => allowed() && setPreview(pickPreviewCard()), SCROLL_IDLE_MS);
   };
-  document.addEventListener('focusin', onFocus);
+  // The page scrolls inside <main>, so listen in the capture phase.
+  document.addEventListener('scroll', onScroll, true);
+  // Also preview something when a list first appears, without scrolling.
+  const onLoad = () => later(() => allowed() && !active && setPreview(pickPreviewCard()), SCROLL_IDLE_MS);
+  const mo = new MutationObserver(onLoad);
+  mo.observe(document.body, { childList: true, subtree: true });
   return () => {
-    document.removeEventListener('focusin', onFocus);
+    document.removeEventListener('scroll', onScroll, true);
+    mo.disconnect();
     window.clearTimeout(timer);
     setPreview(null);
   };

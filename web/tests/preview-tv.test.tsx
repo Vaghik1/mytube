@@ -1,11 +1,11 @@
-// Muted previews on a TV: the video the remote rests on.
+// Muted previews are a phone feature: a TV never plays them, wherever the remote rests.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.hoisted(() => {
   delete (window as any).ontouchstart;
 });
 
-import { FOCUS_DWELL_MS, getPreview, setPreview, startPreviews } from '../src/preview';
+import { getPreview, setPreview, startPreviews } from '../src/preview';
 import { isTouch } from '../src/tv';
 
 function card(id: string) {
@@ -29,33 +29,9 @@ afterEach(() => {
 describe('previews on a TV', () => {
   it('runs in remote mode', () => expect(isTouch).toBe(false));
 
-  it('previews the video the remote rests on', () => {
+  it('never previews the video the remote rests on', () => {
     card('a').focus();
-    vi.advanceTimersByTime(FOCUS_DWELL_MS - 100);
-    expect(getPreview()).toBeNull();
-    vi.advanceTimersByTime(200);
-    expect(getPreview()).toBe('a');
-  });
-
-  it('moving on quickly does not start previews for each video passed', () => {
-    card('a').focus();
-    vi.advanceTimersByTime(500);
-    card('b').focus();
-    vi.advanceTimersByTime(500);
-    const c = card('c');
-    c.focus();
-    vi.advanceTimersByTime(FOCUS_DWELL_MS + 50);
-    expect(getPreview()).toBe('c');
-  });
-
-  it('moving to the menu stops the preview', () => {
-    card('a').focus();
-    vi.advanceTimersByTime(FOCUS_DWELL_MS + 50);
-    const menu = document.createElement('button');
-    document.body.appendChild(menu);
-    menu.focus();
-    expect(getPreview()).toBeNull();
-    vi.advanceTimersByTime(FOCUS_DWELL_MS + 50);
+    vi.advanceTimersByTime(10_000);
     expect(getPreview()).toBeNull();
   });
 });
