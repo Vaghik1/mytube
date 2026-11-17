@@ -16,10 +16,12 @@ import {
   toVideo,
   weave,
   CONTINUE_SLOTS,
+  audienceScore,
+  channelAudience,
   type Video,
 } from '../src/api';
 import { saveRemotePrefs, saveSettings, defaultSettings } from '../src/config';
-import { recordWatch } from '../src/history';
+import { notInterested, recordWatch } from '../src/history';
 import { calls, mockYouTube, signIn, ytVideo } from './youtube-mock';
 
 beforeEach(() => signIn());
@@ -363,3 +365,88 @@ describe('For you', () => {
 function ytVideoToVideo(id: string): Video {
   return toVideo(ytVideo({ id, channelId: 'z', title: `${id} chess lesson` }));
 }
+
+describe('audience size compared with the channel', () => {
+  const NOW = new Date('2026-11-17T12:00:00Z').getTime();
+  const daysAgo = (d: number) => new Date(NOW - d * 86400_000).toISOString();
+  const uploads = [30_000, 50_000, 70_000].map((views, i) => v({ id: `u${i}`, channelId: 'atp', views, publishedAt: daysAgo(5 + i) }));
+
+  it("works out a channel's usual audience from its settled uploads (median)", () => {
+    expect(channelAudience(uploads, NOW).get('atp')).toBe(50_000);
+  });
+
+  it('has no opinion with too few uploads, or only brand-new ones', () => {
+    expect(channelAudience(uploads.slice(0, 2), NOW).has('atp')).toBe(false);
+    const fresh = uploads.map((u) => ({ ...u, publishedAt: daysAgo(0.5) }));
+    expect(channelAudience(fresh, NOW).has('atp')).toBe(false);
+  });
+
+  it('a live stream almost nobody watches (practice camera) goes well down; a big one is fine', () => {
+    const practice = v({ live: true, liveViewers: 41, duration: 0, publishedAt: daysAgo(0) });
+    expect(audienceScore(practice, 50_000, NOW)).toBeLessThan(-1.5);
+    const match = v({ live: true, liveViewers: 8_000, duration: 0, publishedAt: daysAgo(0) });
+    expect(audienceScore(match, 50_000, NOW)).toBe(0);
+    expect(audienceScore({ ...practice, liveViewers: undefined }, 50_000, NOW)).toBe(0); // hidden count
+  });
+
+  it('an upload far below what the channel usually gets for its age goes down; a hit goes slightly up', () => {
+    expect(audienceScore(v({ views: 1_000, publishedAt: daysAgo(5) }), 50_000, NOW)).toBeLessThan(-1);
+    expect(audienceScore(v({ views: 40_000, publishedAt: daysAgo(5) }), 50_000, NOW)).toBe(0);
+    expect(audienceScore(v({ views: 400_000, publishedAt: daysAgo(5) }), 50_000, NOW)).toBeGreaterThan(0);
+    // a few hours old: too early to judge
+    expect(audienceScore(v({ views: 10, publishedAt: daysAgo(0.2) }), 50_000, NOW)).toBe(0);
+    // one day old with a third of the usual views: on track
+    expect(audienceScore(v({ views: 15_000, publishedAt: daysAgo(1) }), 50_000, NOW)).toBe(0);
+  });
+
+  it('in For you, a practice stream from a channel you watch a lot no longer leads', async () => {
+    // You watch ATP Tour a lot (3 full matches).
+    for (const id of ['atp-old1', 'atp-old2', 'atp-old3'])
+      recordWatch({ ...v({ id, channelId: 'atp', title: 'ATP Finals tennis highlights' }), duration: 600 }, 590);
+    const pub = (d: number) => new Date(Date.now() - d * 86400_000).toISOString();
+    const vids: Record<string, Parameters<typeof ytVideo>[0]> = {
+      'atp-live': { id: 'atp-live', channelId: 'atp', title: 'ATP Finals Live Practice Stream', live: 'live', duration: 'P0D', liveViewers: 41, publishedAt: pub(0) },
+      'atp-1': { id: 'atp-1', channelId: 'atp', title: 'ATP Finals tennis highlights day 1', views: 60_000, publishedAt: pub(3) },
+      'atp-2': { id: 'atp-2', channelId: 'atp', title: 'ATP Finals tennis highlights day 2', views: 50_000, publishedAt: pub(4) },
+      'atp-3': { id: 'atp-3', channelId: 'atp', title: 'ATP Finals tennis highlights day 3', views: 40_000, publishedAt: pub(5) },
+    };
+    mockYouTube(
+      {
+        subscriptions: () => ({ items: [{ snippet: { resourceId: { channelId: 'atp' }, title: 'ATP', thumbnails: {} } }] }),
+        channels: (p: URLSearchParams) => ({ items: p.get('id')!.split(',').map((id) => ({ id, contentDetails: { relatedPlaylists: { uploads: `UU-${id}` } } })) }),
+        playlistItems: () => ({ items: Object.keys(vids).map((id) => ({ contentDetails: { videoId: id } })) }),
+        videos: (p: URLSearchParams) => (p.get('myRating') ? { items: [] } : { items: p.get('id')!.split(',').filter((id) => vids[id]).map((id) => ytVideo(vids[id])) }),
+        search: () => ({ items: [] }),
+      },
+      { '/api/picks': () => ({ picks: [] }) },
+    );
+    for (let i = 0; i < 5; i++) {
+      clearCache('fy.');
+      const ids = (await getForYou()).map((x) => x.id);
+      expect(ids.indexOf('atp-live')).toBe(ids.length - 1); // last of the four, every time
+    }
+  });
+
+  it('topics you keep leaving quickly, or mark "Not interested", pull similar videos down', async () => {
+    for (const id of ['c-old1', 'c-old2', 'c-old3'])
+      recordWatch({ ...v({ id, channelId: 'c', title: 'chess tournament round' }), duration: 600 }, 590);
+    notInterested(v({ id: 'p1', channelId: 'c', title: 'chess practice warmup' }));
+    notInterested(v({ id: 'p2', channelId: 'c', title: 'chess practice warmup again' }));
+    // Same words you like in both; only the second has the topics you turned away from.
+    const titles: Record<string, string> = { 'c-a': 'chess tournament round analysis', 'c-b': 'chess tournament round practice warmup' };
+    mockYouTube(
+      {
+        subscriptions: () => ({ items: [{ snippet: { resourceId: { channelId: 'c' }, title: 'C', thumbnails: {} } }] }),
+        channels: (p: URLSearchParams) => ({ items: p.get('id')!.split(',').map((id) => ({ id, contentDetails: { relatedPlaylists: { uploads: `UU-${id}` } } })) }),
+        playlistItems: () => ({ items: Object.keys(titles).map((id) => ({ contentDetails: { videoId: id } })) }),
+        videos: (p: URLSearchParams) => (p.get('myRating') ? { items: [] } : { items: p.get('id')!.split(',').filter((id) => titles[id]).map((id) => ytVideo({ id, channelId: 'c', title: titles[id] })) }),
+        search: () => ({ items: [] }),
+      },
+      { '/api/picks': () => ({ picks: [] }) },
+    );
+    for (let i = 0; i < 5; i++) {
+      clearCache('fy.');
+      expect((await getForYou()).map((x) => x.id)).toEqual(['c-a', 'c-b']);
+    }
+  });
+});

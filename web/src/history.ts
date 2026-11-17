@@ -134,13 +134,21 @@ export function replaceHistory(list: Watch[]) {
   save([...list]);
 }
 
+/** Live streams: watched less than this is just a look, not interest. */
+export const LIVE_PEEK_SEC = 300;
+/** Live streams: watching this long counts like finishing a video. */
+export const LIVE_FULL_SEC = 1800;
+
 /** How much one watch says about your taste (negative = you didn't like it). */
 function weight(w: Watch, now = Date.now()): number {
   const ageDays = (now - w.at) / 86400_000;
   const decay = Math.pow(0.5, ageDays / HALF_LIFE_DAYS);
   if (w.skip) return -1.5 * decay;
-  const completion = w.dur > 0 ? Math.min(1, w.sec / w.dur) : Math.min(1, w.sec / 600);
-  let s = w.sec < 20 ? -0.2 : 0.3 + completion + Math.min(1, w.sec / 1800); // long sessions count more
+  // A live stream has no length: only staying a while says you like it (a quick look says you don't).
+  const live = !(w.dur > 0);
+  const completion = live ? Math.min(1, w.sec / LIVE_FULL_SEC) : Math.min(1, w.sec / w.dur);
+  const peek = w.sec < (live ? LIVE_PEEK_SEC : 20);
+  let s = peek ? -0.2 : 0.3 + completion + Math.min(1, w.sec / 1800); // long sessions count more
   if (w.liked) s += 1.5;
   return s * decay;
 }
@@ -298,6 +306,8 @@ export type Profile = {
   watches: number;
   channels: { id: string; title: string; score: number }[];
   terms: { term: string; score: number }[];
+  /** Topics you keep turning away from (left quickly, "Not interested"): score below zero. */
+  avoid: { term: string; score: number }[];
   cats: { id: string; score: number }[];
   /** Recent videos you clearly enjoyed — used as seeds for "because you watched". */
   seeds: Watch[];
@@ -327,6 +337,10 @@ export function buildProfile(): Profile {
       .filter(([, s]) => s > 0)
       .map(([term, score]) => ({ term, score }))
       .sort((a, b) => b.score - a.score),
+    avoid: [...terms.entries()]
+      .filter(([, s]) => s < 0)
+      .map(([term, score]) => ({ term, score }))
+      .sort((a, b) => a.score - b.score),
     cats: [...cats.entries()]
       .filter(([, s]) => s > 0)
       .map(([id, score]) => ({ id, score }))

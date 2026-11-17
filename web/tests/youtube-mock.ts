@@ -10,6 +10,8 @@ export type FakeVideo = {
   scheduledStart?: string;
   publishedAt?: string;
   tags?: string[];
+  views?: number;
+  liveViewers?: number;
 };
 
 export function ytVideo(v: FakeVideo) {
@@ -26,8 +28,11 @@ export function ytVideo(v: FakeVideo) {
       thumbnails: {},
     },
     contentDetails: { duration: v.duration ?? 'PT10M' },
-    statistics: { viewCount: '1000', likeCount: '10' },
-    liveStreamingDetails: v.scheduledStart ? { scheduledStartTime: v.scheduledStart } : undefined,
+    statistics: { viewCount: String(v.views ?? 1000), likeCount: '10' },
+    liveStreamingDetails:
+      v.scheduledStart || v.liveViewers !== undefined
+        ? { scheduledStartTime: v.scheduledStart, concurrentViewers: v.liveViewers !== undefined ? String(v.liveViewers) : undefined }
+        : undefined,
   };
 }
 

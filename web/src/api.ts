@@ -623,6 +623,10 @@ async function getLearnedFeed(extra: Promise<Video[]>): Promise<Streams> {
   for (const interest of loadRemotePrefs().interests) for (const w of tokens(interest)) termScore.set(w, Math.max(termScore.get(w) || 0, 1));
   for (const id of prefs.favIds) chScore.set(id, Math.max(chScore.get(id) || 0, 1));
   const subIds = new Set(fromSubs.map((v) => v.channelId));
+  // Topics you keep turning away from pull a video down (a word can't cost more than 1).
+  const avoidScore = new Map(profile.avoid.map((t) => [t.term, Math.min(1, -t.score * 2)]));
+  const typical = channelAudience([...fromChannels, ...fromSearch, ...fromSubs, ...prefs.fromChannels, ...prefs.fromInterests, ...fromLive]);
+  const now = Date.now();
 
   const scored = new Map<string, { v: Video; s: number; gpt: boolean }>();
   const add = (list: Video[], bonus: number, gpt = false) => {
@@ -631,12 +635,18 @@ async function getLearnedFeed(extra: Promise<Video[]>): Promise<Streams> {
       const ageDays = (Date.now() - new Date(v.publishedAt).getTime()) / 86400_000;
       const words = new Set([...tokens(v.title), ...(v.tags || []).flatMap(tokens)]);
       let topic = 0;
-      words.forEach((w) => (topic += termScore.get(w) || 0));
+      let avoid = 0;
+      words.forEach((w) => {
+        topic += termScore.get(w) || 0;
+        avoid += avoidScore.get(w) || 0;
+      });
       const s =
         2 * Math.max(0, chScore.get(v.channelId) || 0) +
-        Math.min(2, topic) +
+        Math.min(2, topic) -
+        Math.min(1.5, avoid) +
         1.2 / (1 + Math.max(0, ageDays) / 7) +
         (subIds.has(v.channelId) ? 0.3 : 0) +
+        audienceScore(v, typical.get(v.channelId), now) +
         bonus +
         Math.random() * 0.4;
       scored.set(v.id, { v, s, gpt });
@@ -652,6 +662,54 @@ async function getLearnedFeed(extra: Promise<Video[]>): Promise<Streams> {
 
   const all = [...scored.values()];
   return { mine: diverse(all.filter((c) => !c.gpt)), gpt: diverse(all.filter((c) => c.gpt)) };
+}
+
+// ── How big an audience a video has, compared with its channel's usual audience ──
+// A channel's typical audience is the median views of its uploads in the candidate list that are
+// at least a couple of days old (no extra API calls). Needs a few of them; otherwise no opinion.
+const AUDIENCE_MIN_SAMPLES = 3;
+const SETTLED_DAYS = 2;
+
+const ageDaysOf = (v: Video, now: number) => (now - new Date(v.publishedAt).getTime()) / 86400_000;
+
+/** Median views per channel, from its settled uploads in the list. */
+export function channelAudience(videos: Video[], now = Date.now()): Map<string, number> {
+  const by = new Map<string, number[]>();
+  for (const v of videos) {
+    if (v.live || v.upcoming || !(v.views > 0) || !(ageDaysOf(v, now) >= SETTLED_DAYS)) continue;
+    const list = by.get(v.channelId) || [];
+    list.push(v.views);
+    by.set(v.channelId, list);
+  }
+  const out = new Map<string, number>();
+  for (const [ch, list] of by) {
+    if (list.length < AUDIENCE_MIN_SAMPLES) continue;
+    list.sort((a, b) => a - b);
+    out.set(ch, list[Math.floor(list.length / 2)]);
+  }
+  return out;
+}
+
+/**
+ * Score adjustment for audience size (about −3 … +0.5). Few people care about this video compared with
+ * what the channel normally gets, e.g. a practice-court camera with 41 viewers on a channel whose videos
+ * get 50K views: strongly down. An upload doing much better than usual: slightly up.
+ */
+export function audienceScore(v: Video, typical: number | undefined, now = Date.now()): number {
+  if (!typical || v.upcoming) return 0;
+  if (v.live) {
+    // A stream people care about has at least ~1% of the channel's usual audience watching at once.
+    if (!v.liveViewers) return 0; // count hidden by the channel
+    const ratio = v.liveViewers / typical;
+    return ratio >= 0.01 ? 0 : -Math.min(3, Math.log10(0.01 / ratio) * 2);
+  }
+  const age = ageDaysOf(v, now);
+  if (!(age >= 0.5)) return 0; // too new to judge
+  const expected = typical * Math.min(1, age / 3); // most views come in the first few days
+  const ratio = (v.views || 0) / expected;
+  if (ratio < 0.25) return -Math.min(2, Math.log10(0.25 / Math.max(ratio, 1e-4)) * 1.5);
+  if (ratio > 2) return Math.min(0.5, Math.log10(ratio / 2) * 0.5);
+  return 0;
 }
 
 /** Best first, but don't let one channel take over the screen. */

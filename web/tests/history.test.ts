@@ -229,3 +229,23 @@ describe('history is read fast', () => {
     expect(loadHistory()).toEqual([]);
   });
 });
+
+describe('live streams in your taste profile', () => {
+  const live = (id: string, title: string) => ({ ...vid(id, 'atp', title, 0), live: true });
+
+  it('a quick look at a live stream counts against it, not for it', () => {
+    clearHistory();
+    recordWatch(live('l1', 'tennis practice stream'), 120); // two minutes
+    const p = buildProfile();
+    expect(p.channels.find((c) => c.id === 'atp')).toBeUndefined();
+    expect(p.avoid.map((t) => t.term)).toContain('practice');
+  });
+
+  it('staying with a live stream for a while counts as liking it', () => {
+    clearHistory();
+    recordWatch(live('l2', 'tennis final'), 2400); // 40 minutes
+    const p = buildProfile();
+    expect(p.channels.find((c) => c.id === 'atp')?.score).toBeGreaterThan(1);
+    expect(p.avoid).toHaveLength(0);
+  });
+});
