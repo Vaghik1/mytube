@@ -649,12 +649,12 @@ async function getLearnedFeed(extra: Promise<Video[]>): Promise<Streams> {
         2 * Math.max(0, chScore.get(v.channelId) || 0) +
         Math.min(2, topic) -
         Math.min(1.5, avoid) +
-        1.2 / (1 + Math.max(0, ageDays) / 7) +
+        freshness(ageDays) +
         (subIds.has(v.channelId) ? 0.3 : 0) +
         audienceScore(v, typical.get(v.channelId), now) +
         LOYALTY_BOOST * (loyalty.get(v.channelId) || 0) +
         bonus +
-        Math.random() * 0.4;
+        Math.random() * RANDOM_SPREAD;
       scored.set(v.id, { v, s, gpt });
     }
   };
@@ -778,8 +778,24 @@ export function regularChannels(history = loadHistory(), now = Date.now()): stri
     .map(([ch]) => ch);
 }
 
-/** Best first, but don't let one channel take over the screen. */
-function diverse(pool: { v: Video; s: number }[]): Video[] {
+/**
+ * Points for being new: about 1.9 for a few hours old, 1.5 at a day, 1.0 at 3 days, 0.6 at a week.
+ * Strong enough that between two equally good videos the newer one wins, like YouTube.
+ */
+export function freshness(ageDays: number): number {
+  return 2 / (1 + Math.max(0, ageDays) / 3);
+}
+
+/** A little randomness so near-ties vary between visits, too small to turn a real difference around. */
+export const RANDOM_SPREAD = 0.15;
+
+/** Within this many points, two videos of a channel count as equally good: the newer goes first. */
+export const SAME_QUALITY = 0.6;
+
+const publishedMs = (v: Video) => new Date(v.publishedAt).getTime() || 0;
+
+/** Best first, but don't let one channel take over the screen. Equally good videos of a channel: newest first. */
+export function diverse(pool: { v: Video; s: number }[]): Video[] {
   const pool2 = [...pool];
   const perChannel = new Map<string, number>();
   const out: Video[] = [];
@@ -792,6 +808,11 @@ function diverse(pool: { v: Video; s: number }[]): Video[] {
         best = adj;
         bi = i;
       }
+    });
+    // Same channel, about as good: take its newest one first (the rest follow in later turns).
+    const top = pool2[bi];
+    pool2.forEach((c, i) => {
+      if (c.v.channelId === top.v.channelId && c.s >= top.s - SAME_QUALITY && publishedMs(c.v) > publishedMs(pool2[bi].v)) bi = i;
     });
     const [pick] = pool2.splice(bi, 1);
     perChannel.set(pick.v.channelId, (perChannel.get(pick.v.channelId) || 0) + 1);

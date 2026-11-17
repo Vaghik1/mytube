@@ -19,6 +19,8 @@ import {
   audienceScore,
   channelAudience,
   channelLoyalty,
+  diverse,
+  freshness,
   type Video,
 } from '../src/api';
 import { saveRemotePrefs, saveSettings, defaultSettings } from '../src/config';
@@ -498,6 +500,51 @@ describe('loyalty: channels whose new videos you always watch', () => {
     for (let i = 0; i < 5; i++) {
       clearCache('fy.');
       expect((await getForYou())[0].id).toBe('fav-new');
+    }
+  });
+});
+
+describe('newer wins between equally good videos', () => {
+  it('newness counts for more in the first days', () => {
+    expect(freshness(0.1)).toBeGreaterThan(1.8);
+    expect(freshness(1)).toBeCloseTo(1.5);
+    expect(freshness(3)).toBeCloseTo(1);
+    expect(freshness(1) - freshness(5)).toBeGreaterThan(0.6); // more than any random variety
+  });
+
+  it("puts a channel's newest video first when it's about as good, not when it's clearly worse", () => {
+    const d = (n: number) => new Date(Date.now() - n * 86400_000).toISOString();
+    const older = v({ id: 'older', publishedAt: d(4) });
+    const newer = v({ id: 'newer', publishedAt: d(1) });
+    expect(diverse([{ v: older, s: 3 }, { v: newer, s: 2.7 }]).map((x) => x.id)).toEqual(['newer', 'older']);
+    expect(diverse([{ v: older, s: 3 }, { v: newer, s: 1.5 }]).map((x) => x.id)).toEqual(['older', 'newer']);
+  });
+
+  it("in For you, a channel's uploads of similar quality come newest first, every time", async () => {
+    const pub = (d: number) => new Date(Date.now() - d * 86400_000).toISOString();
+    const vids: Record<string, Parameters<typeof ytVideo>[0]> = {};
+    for (const [id, days, title] of [
+      ['s-1', 1, 'chess lesson rook endgames'],
+      ['s-2', 3, 'chess lesson knight forks'],
+      ['s-3', 6, 'chess lesson pawn structure'],
+      ['s-4', 9, 'chess lesson bishop pair'],
+    ] as const)
+      vids[id] = { id, channelId: 's', title, publishedAt: pub(days), views: 20_000 };
+    for (const id of ['s-old1', 's-old2', 's-old3'])
+      recordWatch({ ...v({ id, channelId: 's', title: 'chess lesson' }), duration: 600 }, 590);
+    mockYouTube(
+      {
+        subscriptions: () => ({ items: [{ snippet: { resourceId: { channelId: 's' }, title: 'S', thumbnails: {} } }] }),
+        channels: (p: URLSearchParams) => ({ items: p.get('id')!.split(',').map((id) => ({ id, contentDetails: { relatedPlaylists: { uploads: `UU-${id}` } } })) }),
+        playlistItems: () => ({ items: Object.keys(vids).map((id) => ({ contentDetails: { videoId: id, videoPublishedAt: vids[id].publishedAt } })) }),
+        videos: (p: URLSearchParams) => (p.get('myRating') ? { items: [] } : { items: p.get('id')!.split(',').filter((id) => vids[id]).map((id) => ytVideo(vids[id])) }),
+        search: () => ({ items: [] }),
+      },
+      { '/api/picks': () => ({ picks: [] }) },
+    );
+    for (let i = 0; i < 8; i++) {
+      clearCache('fy.');
+      expect((await getForYou()).map((x) => x.id)).toEqual(['s-1', 's-2', 's-3', 's-4']);
     }
   });
 });
