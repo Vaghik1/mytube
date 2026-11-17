@@ -76,6 +76,9 @@ export function focusFirst(): boolean {
   return !!pick;
 }
 
+/** The side menu and the page are separate areas: Up/Down stay in the one you're in (Left/Right cross). */
+const inMenu = (el: Element) => !!el.closest('.sidebar');
+
 function move(dir: Dir) {
   const active = document.activeElement as HTMLElement | null;
   const all = candidates();
@@ -84,12 +87,16 @@ function move(dir: Dir) {
     return;
   }
   const r = active.getBoundingClientRect();
+  const vertical = dir === 'up' || dir === 'down';
+  const menu = inMenu(active);
   const cx = r.left + r.width / 2;
   const cy = r.top + r.height / 2;
   let best: HTMLElement | null = null;
   let bestScore = Infinity;
   for (const el of all) {
     if (el === active) continue;
+    // A long gap to the next row of the page must not let the side menu "win" (and vice versa).
+    if (vertical && inMenu(el) !== menu) continue;
     const c = el.getBoundingClientRect();
     const ex = c.left + c.width / 2;
     const ey = c.top + c.height / 2;

@@ -60,6 +60,52 @@ describe('device detection', () => {
   });
 });
 
+describe('remote control navigation (a page with long gaps, like Settings)', () => {
+  // [menu] items all down the left; the page's buttons are far apart (long text between them):
+  //   [m1]  [top]
+  //   [m2]
+  //   [m3]
+  //   …
+  //   [m7]  [bottom]
+  beforeEach(async () => {
+    const tv = await loadTv('tv');
+    cleanup = tv.initTV();
+    const menu = document.createElement('nav');
+    menu.className = 'sidebar';
+    document.body.appendChild(menu);
+    for (let i = 1; i <= 7; i++) box(`m${i}`, 0, (i - 1) * 150, 60, 50, menu);
+    const main = document.createElement('main');
+    document.body.appendChild(main);
+    box('top', 100, 0, 150, 40, main);
+    box('bottom', 100, 900, 150, 40, main);
+  });
+
+  it('Down and Up go to the next button of the page, never into the side menu', () => {
+    document.getElementById('top')!.focus();
+    press('ArrowDown');
+    expect(focused()).toBe('bottom');
+    press('ArrowUp');
+    expect(focused()).toBe('top');
+  });
+
+  it('Up and Down in the side menu stay in the menu', () => {
+    document.getElementById('m1')!.focus();
+    press('ArrowDown');
+    expect(focused()).toBe('m2');
+    document.getElementById('m7')!.focus();
+    press('ArrowDown');
+    expect(focused()).toBe('m7');
+  });
+
+  it('Left still opens the menu and Right comes back', () => {
+    document.getElementById('bottom')!.focus();
+    press('ArrowLeft');
+    expect(focused()).toBe('m7');
+    press('ArrowRight');
+    expect(focused()).toBe('bottom');
+  });
+});
+
 describe('remote control navigation (grid)', () => {
   let tv: TV;
   // A 3×2 grid of cards plus a sidebar on the left:
