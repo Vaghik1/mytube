@@ -18,6 +18,7 @@ import {
   CONTINUE_SLOTS,
   audienceScore,
   channelAudience,
+  channelLoyalty,
   type Video,
 } from '../src/api';
 import { saveRemotePrefs, saveSettings, defaultSettings } from '../src/config';
@@ -447,6 +448,56 @@ describe('audience size compared with the channel', () => {
     for (let i = 0; i < 5; i++) {
       clearCache('fy.');
       expect((await getForYou()).map((x) => x.id)).toEqual(['c-a', 'c-b']);
+    }
+  });
+});
+
+describe('loyalty: channels whose new videos you always watch', () => {
+  const NOW = new Date('2026-11-17T12:00:00Z').getTime();
+  const at = (d: number) => new Date(NOW - d * 86400_000).toISOString();
+  const watch = (id: string, ch: string, sec = 600) => ({ id, ch, cht: ch, title: 't', sec, dur: 600, at: NOW });
+
+  it('is the share of the recent uploads you watched, smoothed', () => {
+    const uploads = [1, 2, 3, 4].map((d) => v({ id: `f${d}`, channelId: 'fav', publishedAt: at(d * 7) }));
+    const all = channelLoyalty(uploads, uploads.map((u) => watch(u.id, 'fav')), NOW);
+    expect(all.get('fav')).toBeCloseTo(4 / 5);
+    const half = channelLoyalty(uploads, [watch('f1', 'fav'), watch('f2', 'fav')], NOW);
+    expect(half.get('fav')).toBeCloseTo(2 / 5);
+  });
+
+  it("doesn't count brand-new uploads (you haven't had a chance yet), quick peeks, or a single video", () => {
+    const uploads = [v({ id: 'n', channelId: 'fav', publishedAt: at(0.2) }), v({ id: 'o1', channelId: 'fav', publishedAt: at(3) }), v({ id: 'o2', channelId: 'fav', publishedAt: at(5) })];
+    expect(channelLoyalty(uploads, [watch('o1', 'fav', 10), watch('o2', 'fav', 10)], NOW).has('fav')).toBe(false);
+    expect(channelLoyalty(uploads.slice(0, 2), [watch('o1', 'fav')], NOW).has('fav')).toBe(false);
+  });
+
+  it("a channel you watch faithfully leads with its new video, even over a channel you watch more of", async () => {
+    const pub = (d: number) => new Date(Date.now() - d * 86400_000).toISOString();
+    const vids: Record<string, Parameters<typeof ytVideo>[0]> = {};
+    const add = (id: string, channelId: string, days: number) => (vids[id] = { id, channelId, title: 'chess lesson', publishedAt: pub(days) });
+    // A weekly channel: you watched each of its last 4 videos.
+    add('fav-new', 'fav', 0.1);
+    for (const w of [1, 2, 3, 4]) add(`fav-${w}`, 'fav', w * 7);
+    // A daily channel: you watched 8 of its older videos (more in total), but skip most new ones.
+    add('big-new', 'big', 0.1);
+    add('big-a', 'big', 2);
+    add('big-b', 'big', 3);
+    for (let i = 1; i <= 8; i++) recordWatch({ ...v({ id: `big-old${i}`, channelId: 'big', title: 'chess lesson' }), duration: 600 }, 590);
+    for (const w of [1, 2, 3, 4]) recordWatch({ ...v({ id: `fav-${w}`, channelId: 'fav', title: 'chess lesson' }), duration: 600 }, 590);
+    const uploads = (ch: string) => Object.keys(vids).filter((id) => vids[id].channelId === ch);
+    mockYouTube(
+      {
+        subscriptions: () => ({ items: ['fav', 'big'].map((c) => ({ snippet: { resourceId: { channelId: c }, title: c, thumbnails: {} } })) }),
+        channels: (p: URLSearchParams) => ({ items: p.get('id')!.split(',').map((id) => ({ id, contentDetails: { relatedPlaylists: { uploads: `UU-${id}` } } })) }),
+        playlistItems: (p: URLSearchParams) => ({ items: uploads(p.get('playlistId')!.replace('UU-', '')).map((id) => ({ contentDetails: { videoId: id, videoPublishedAt: vids[id].publishedAt } })) }),
+        videos: (p: URLSearchParams) => (p.get('myRating') ? { items: [] } : { items: p.get('id')!.split(',').filter((id) => vids[id]).map((id) => ytVideo(vids[id])) }),
+        search: () => ({ items: [] }),
+      },
+      { '/api/picks': () => ({ picks: [] }) },
+    );
+    for (let i = 0; i < 5; i++) {
+      clearCache('fy.');
+      expect((await getForYou())[0].id).toBe('fav-new');
     }
   });
 });

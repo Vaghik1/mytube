@@ -1,7 +1,7 @@
 // YouTube Data API v3 wrapper. Daily quota is 10,000 units: most calls cost 1, search costs 100.
 import { getAccessToken } from './auth';
 import { effectiveSettings, loadRemotePrefs, loadSettings } from './config';
-import { buildProfile, seedQuery, seenIds, tokens, continueWatching } from './history';
+import { buildProfile, seedQuery, seenIds, tokens, continueWatching, loadHistory, type Watch } from './history';
 import { demoteIgnored } from './impressions';
 
 const BASE = 'https://www.googleapis.com/youtube/v3/';
@@ -595,13 +595,13 @@ async function getLearnedFeed(extra: Promise<Video[]>): Promise<Streams> {
   if (profile.watches < 3) return getStarterFeed(extra);
 
   const topChannels = profile.channels.slice(0, 10);
+  // Also follow channels you watch regularly, even if they upload rarely (needed to see your loyalty).
+  const followIds = [...new Set([...topChannels.map((c) => c.id), ...regularChannels()])].slice(0, 20);
   const queries = [...new Set(profile.seeds.slice(0, 3).map((w) => seedQuery(w, profile)).filter(Boolean))];
 
   const prefs = await preferenceVideos().catch(() => ({ fromChannels: [] as Video[], fromInterests: [] as Video[], favIds: [] as string[] }));
   const [fromChannels, fromSearch, fromSubs, fromLive] = await Promise.all([
-    cached(`fy.ch.${topChannels.map((c) => c.id).join(',')}`, 60 * 60_000, () =>
-      channelsUploads(topChannels.map((c) => c.id), 8),
-    ).catch(() => [] as Video[]),
+    cached(`fy.ch.${followIds.join(',')}`, 60 * 60_000, () => channelsUploads(followIds, 8)).catch(() => [] as Video[]),
     Promise.all(
       queries.map((q) =>
         // Search costs 100 units, so each topic is searched at most twice a day.
@@ -627,6 +627,8 @@ async function getLearnedFeed(extra: Promise<Video[]>): Promise<Streams> {
   const avoidScore = new Map(profile.avoid.map((t) => [t.term, Math.min(1, -t.score * 2)]));
   const typical = channelAudience([...fromChannels, ...fromSearch, ...fromSubs, ...prefs.fromChannels, ...prefs.fromInterests, ...fromLive]);
   const now = Date.now();
+  // Channels' recent uploads (including ones you've watched) tell how faithfully you follow them.
+  const loyalty = channelLoyalty([...fromSubs, ...fromChannels, ...prefs.fromChannels], loadHistory(), now);
 
   const scored = new Map<string, { v: Video; s: number; gpt: boolean }>();
   const add = (list: Video[], bonus: number, gpt = false) => {
@@ -647,6 +649,7 @@ async function getLearnedFeed(extra: Promise<Video[]>): Promise<Streams> {
         1.2 / (1 + Math.max(0, ageDays) / 7) +
         (subIds.has(v.channelId) ? 0.3 : 0) +
         audienceScore(v, typical.get(v.channelId), now) +
+        LOYALTY_BOOST * (loyalty.get(v.channelId) || 0) +
         bonus +
         Math.random() * 0.4;
       scored.set(v.id, { v, s, gpt });
@@ -710,6 +713,50 @@ export function audienceScore(v: Video, typical: number | undefined, now = Date.
   if (ratio < 0.25) return -Math.min(2, Math.log10(0.25 / Math.max(ratio, 1e-4)) * 1.5);
   if (ratio > 2) return Math.min(0.5, Math.log10(ratio / 2) * 0.5);
   return 0;
+}
+
+// ── Loyalty: channels whose new videos you (almost) always watch ──
+// Like YouTube: if you watch most of what a channel puts out, its next upload belongs near the top,
+// however often it uploads. Volume alone (the channel score) favours channels that upload a lot.
+/** An upload counts once it is this old (you've had a chance to watch it). */
+const LOYALTY_SETTLED_MS = 86400_000;
+/** Played this long, or finished: you watched it. */
+const LOYALTY_WATCHED_SEC = 60;
+/** Boost for a channel whose every video you watch (scaled by the share you watch). */
+export const LOYALTY_BOOST = 3;
+
+/**
+ * Per channel: the share of its recent uploads (in the list, a day or more old) that you watched,
+ * smoothed so a couple of videos don't count as "always" (2 of 2 → 0.67, 5 of 5 → 0.83).
+ */
+export function channelLoyalty(uploads: Video[], history: Watch[], now = Date.now()): Map<string, number> {
+  const watched = new Set(history.filter((w) => !w.skip && (w.sec >= LOYALTY_WATCHED_SEC || (w.dur > 0 && w.sec >= w.dur * 0.9))).map((w) => w.id));
+  const by = new Map<string, { n: number; seen: number }>();
+  const counted = new Set<string>();
+  for (const v of uploads) {
+    if (counted.has(v.id) || v.live || v.upcoming) continue;
+    if (!(now - new Date(v.publishedAt).getTime() >= LOYALTY_SETTLED_MS)) continue;
+    counted.add(v.id);
+    const c = by.get(v.channelId) || { n: 0, seen: 0 };
+    c.n++;
+    if (watched.has(v.id)) c.seen++;
+    by.set(v.channelId, c);
+  }
+  const out = new Map<string, number>();
+  for (const [ch, c] of by) if (c.n >= 2 && c.seen > 0) out.set(ch, c.seen / (c.n + 1));
+  return out;
+}
+
+/** Channels with at least 2 videos you watched in the last 2 months, most watched first (max 10). */
+export function regularChannels(history = loadHistory(), now = Date.now()): string[] {
+  const n = new Map<string, number>();
+  for (const w of history)
+    if (!w.skip && w.ch && w.sec >= LOYALTY_WATCHED_SEC && now - w.at < 60 * 86400_000) n.set(w.ch, (n.get(w.ch) || 0) + 1);
+  return [...n.entries()]
+    .filter(([, k]) => k >= 2)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([ch]) => ch);
 }
 
 /** Best first, but don't let one channel take over the screen. */
