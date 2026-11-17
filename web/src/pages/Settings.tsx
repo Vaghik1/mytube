@@ -1,12 +1,68 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { clearCache } from '../api';
 import { signOut } from '../auth';
 import { loadRemotePrefs, defaultSettings, loadSettings, saveSettings, type Settings as S } from '../config';
 import { android, isTouch } from '../tv';
 import { buildProfile, clearHistory } from '../history';
 import { resetAssistantPrefs } from '../agent';
-import { clearHistoryEverywhere } from '../historySync';
+import { clearHistoryEverywhere, syncSoon } from '../historySync';
+import { importTakeoutFile } from '../ytImport';
 import { canSelfUpdate, checkForUpdate, installUpdate, installedVersion, useUpdate } from '../update';
+
+/** Import what you watched in YouTube itself (Google Takeout), so For you knows your habits there too. */
+function YouTubeImport({ onDone }: { onDone: () => void }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [msg, setMsg] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const pick = async (file?: File) => {
+    if (!file) return;
+    setBusy(true);
+    setMsg('Reading…');
+    try {
+      const { found, added } = await importTakeoutFile(file);
+      setMsg(
+        found === 0
+          ? 'No YouTube videos found in this file.'
+          : `Imported ${added} videos you watched in YouTube${added < found ? ` (of ${found}: older than 4 months, already known, or over 500 skipped)` : ''}.`,
+      );
+      clearCache('fy.');
+      syncSoon(500); // the TV gets them too
+      onDone();
+    } catch (e) {
+      setMsg((e as Error).message);
+    } finally {
+      setBusy(false);
+      if (input.current) input.current.value = '';
+    }
+  };
+  return (
+    <>
+      <h2 className="section-title">Your YouTube watch history</h2>
+      <p className="muted">
+        YouTube doesn't share your watch history with apps, but you can download it from Google and import it here, so
+        "For you" knows which channels you always watch (and skips videos you've already seen).
+      </p>
+      {isTouch ? (
+        <>
+          <p className="muted">
+            1. Open takeout.google.com → "Deselect all" → select only "YouTube and YouTube Music". 2. "All YouTube data
+            included" → only "history". 3. "Multiple formats" → History: JSON. 4. Create the export, download the .zip,
+            and choose it here.
+          </p>
+          <input ref={input} type="file" accept=".zip,.json,application/zip,application/json" hidden onChange={(e) => pick(e.target.files?.[0])} />
+          <div className="chips wrap">
+            <button className="chip focusable" disabled={busy} onClick={() => input.current?.click()}>
+              Import YouTube history
+            </button>
+          </div>
+        </>
+      ) : (
+        <p className="muted">Import it on your phone (MyTube → Settings); it shows up here on the TV by itself.</p>
+      )}
+      {msg && <p className="muted" role="status">{msg}</p>}
+    </>
+  );
+}
 
 function AppUpdates() {
   const u = useUpdate();
@@ -116,6 +172,8 @@ export function Settings() {
           Clear watch history (TV and phone)
         </button>
       </div>
+
+      <YouTubeImport onDone={() => setProfile(buildProfile())} />
 
       <h2 className="section-title">Set by ChatGPT</h2>
       {[

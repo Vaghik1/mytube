@@ -18,7 +18,14 @@ export type Watch = {
   skip?: boolean; // "Not interested"
   opens?: number; // times you started it (played at least a few seconds)
   pos?: number; // where you stopped (seconds), to resume and to draw the progress bar
+  /** Watched in YouTube itself (imported from Google Takeout), not in MyTube. */
+  yt?: boolean;
+  /** Imported: when you watched it on YouTube (ms). `at` is when it was imported, so it syncs. */
+  t?: number;
 };
+
+/** When you actually watched it (imported YouTube watches keep their own time). */
+export const watchedAt = (w: Watch) => (w.yt && w.t ? w.t : w.at);
 
 const KEY = 'mytube.history';
 const MAX = 800;
@@ -80,6 +87,8 @@ export function recordWatch(v: Video, sec: number, pos?: number) {
     sec: Math.max(prev?.sec || 0, Math.round(sec)),
     ...(pos !== undefined && pos >= 0 ? { pos: Math.round(pos), dur: v.duration || prev?.dur || 0 } : {}),
     skip: false,
+    yt: undefined, // watched here now: a normal MyTube watch
+    t: undefined,
   });
 }
 
@@ -88,7 +97,7 @@ export function startedWatching(v: Video) {
   if (!v?.id) return;
   clearImpressions(v.id);
   const prev = loadHistory().find((w) => w.id === v.id);
-  upsert(v, { opens: (prev?.opens || 0) + 1, skip: false });
+  upsert(v, { opens: (prev?.opens || 0) + 1, skip: false, yt: undefined, t: undefined });
 }
 
 export function markLiked(v: Video, liked: boolean) {
@@ -97,6 +106,31 @@ export function markLiked(v: Video, liked: boolean) {
 
 export function notInterested(v: Video) {
   upsert(v, { skip: true });
+}
+
+/** Imported YouTube watches: at most this many, from at most this far back. */
+export const IMPORT_MAX = 500;
+export const IMPORT_DAYS = 120;
+
+/**
+ * Adds videos you watched in YouTube itself (from Google Takeout). Videos already in your MyTube
+ * history are left as they are. Returns how many were added.
+ */
+export function importWatches(list: { id: string; ch: string; cht: string; title: string; t: number }[], now = Date.now()): number {
+  const history = loadHistory();
+  const have = new Set(history.map((w) => w.id));
+  const fresh = list
+    .filter((x) => x.id && x.ch && now - x.t < IMPORT_DAYS * 86400_000 && x.t <= now)
+    .sort((a, b) => b.t - a.t);
+  const added: Watch[] = [];
+  for (const x of fresh) {
+    if (added.length >= IMPORT_MAX) break;
+    if (have.has(x.id)) continue;
+    have.add(x.id);
+    added.push({ id: x.id, ch: x.ch, cht: x.cht, title: x.title, sec: 0, dur: 0, at: now, yt: true, t: x.t });
+  }
+  if (added.length) save([...history, ...added]);
+  return added.length;
 }
 
 export function clearHistory() {
@@ -141,9 +175,11 @@ export const LIVE_FULL_SEC = 1800;
 
 /** How much one watch says about your taste (negative = you didn't like it). */
 function weight(w: Watch, now = Date.now()): number {
-  const ageDays = (now - w.at) / 86400_000;
+  const ageDays = (now - watchedAt(w)) / 86400_000;
   const decay = Math.pow(0.5, ageDays / HALF_LIFE_DAYS);
   if (w.skip) return -1.5 * decay;
+  // Watched in YouTube: we don't know for how long, so it counts like a solid, ordinary watch.
+  if (w.yt) return 0.8 * decay;
   // A live stream has no length: only staying a while says you like it (a quick look says you don't).
   const live = !(w.dur > 0);
   const completion = live ? Math.min(1, w.sec / LIVE_FULL_SEC) : Math.min(1, w.sec / w.dur);
@@ -182,7 +218,7 @@ export function isInProgress(w: Watch, now = Date.now()) {
  *  • A short peek: out for 3 days, then it may come back.
  */
 export function isSeen(w: Watch, now = Date.now()) {
-  if (w.skip || isFinished(w)) return true;
+  if (w.skip || w.yt || isFinished(w)) return true; // already watched in YouTube: don't suggest it again
   if (w.sec >= PEEK_SEC) return true; // in progress (shown separately) or abandoned after a week
   if (w.sec >= 3 && now - w.at < PEEK_COOLDOWN_MS) return true;
   return false;

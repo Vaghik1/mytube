@@ -1,7 +1,7 @@
 // YouTube Data API v3 wrapper. Daily quota is 10,000 units: most calls cost 1, search costs 100.
 import { getAccessToken } from './auth';
 import { effectiveSettings, loadRemotePrefs, loadSettings } from './config';
-import { buildProfile, seedQuery, seenIds, tokens, continueWatching, loadHistory, type Watch } from './history';
+import { buildProfile, seedQuery, seenIds, tokens, continueWatching, loadHistory, watchedAt, type Watch } from './history';
 import { demoteIgnored } from './impressions';
 
 const BASE = 'https://www.googleapis.com/youtube/v3/';
@@ -600,7 +600,7 @@ async function getLearnedFeed(extra: Promise<Video[]>): Promise<Streams> {
   const queries = [...new Set(profile.seeds.slice(0, 3).map((w) => seedQuery(w, profile)).filter(Boolean))];
 
   const prefs = await preferenceVideos().catch(() => ({ fromChannels: [] as Video[], fromInterests: [] as Video[], favIds: [] as string[] }));
-  const [fromChannels, fromSearch, fromSubs, fromLive] = await Promise.all([
+  const [fromChannels, fromSearch, fromSubs, fromLive, subsOrder, liked] = await Promise.all([
     cached(`fy.ch.${followIds.join(',')}`, 60 * 60_000, () => channelsUploads(followIds, 8)).catch(() => [] as Video[]),
     Promise.all(
       queries.map((q) =>
@@ -610,6 +610,8 @@ async function getLearnedFeed(extra: Promise<Video[]>): Promise<Streams> {
     ).then((r) => r.flat()),
     getSubscriptionFeed().catch(() => [] as Video[]),
     extra,
+    getSubscriptions(loadSettings().feedChannelLimit).catch(() => [] as Channel[]),
+    cached('fy.likedlist', 3600_000, () => getLiked().then((p) => p.items)).catch(() => [] as Video[]),
   ]);
 
   // Score every candidate against your taste profile.
@@ -622,6 +624,7 @@ async function getLearnedFeed(extra: Promise<Video[]>): Promise<Streams> {
   // ChatGPT's interests count like your strongest topics; favourite channels like your top channel.
   for (const interest of loadRemotePrefs().interests) for (const w of tokens(interest)) termScore.set(w, Math.max(termScore.get(w) || 0, 1));
   for (const id of prefs.favIds) chScore.set(id, Math.max(chScore.get(id) || 0, 1));
+  for (const [id, p] of youtubePrior(subsOrder, liked)) chScore.set(id, Math.max(chScore.get(id) || 0, p));
   const subIds = new Set(fromSubs.map((v) => v.channelId));
   // Topics you keep turning away from pull a video down (a word can't cost more than 1).
   const avoidScore = new Map(profile.avoid.map((t) => [t.term, Math.min(1, -t.score * 2)]));
@@ -730,7 +733,9 @@ export const LOYALTY_BOOST = 3;
  * smoothed so a couple of videos don't count as "always" (2 of 2 → 0.67, 5 of 5 → 0.83).
  */
 export function channelLoyalty(uploads: Video[], history: Watch[], now = Date.now()): Map<string, number> {
-  const watched = new Set(history.filter((w) => !w.skip && (w.sec >= LOYALTY_WATCHED_SEC || (w.dur > 0 && w.sec >= w.dur * 0.9))).map((w) => w.id));
+  const watched = new Set(
+    history.filter((w) => !w.skip && (w.yt || w.sec >= LOYALTY_WATCHED_SEC || (w.dur > 0 && w.sec >= w.dur * 0.9))).map((w) => w.id),
+  );
   const by = new Map<string, { n: number; seen: number }>();
   const counted = new Set<string>();
   for (const v of uploads) {
@@ -747,11 +752,25 @@ export function channelLoyalty(uploads: Video[], history: Watch[], now = Date.no
   return out;
 }
 
+/**
+ * What YouTube itself tells us about your taste (it doesn't share watch history): channels of videos
+ * you liked there, and your subscriptions in YouTube's "most relevant" order. A head start (0…0.8 of
+ * your top channel) until MyTube has learned more; never lowers what MyTube learned.
+ */
+export function youtubePrior(subsByRelevance: { id: string }[], liked: Video[]): Map<string, number> {
+  const out = new Map<string, number>();
+  const likes = new Map<string, number>();
+  for (const v of liked.slice(0, 50)) likes.set(v.channelId, (likes.get(v.channelId) || 0) + 1);
+  for (const [ch, n] of likes) out.set(ch, Math.min(0.8, 0.3 + 0.25 * (n - 1)));
+  subsByRelevance.slice(0, 10).forEach((c, r) => out.set(c.id, Math.max(out.get(c.id) || 0, 0.6 * (1 - r / 10))));
+  return out;
+}
+
 /** Channels with at least 2 videos you watched in the last 2 months, most watched first (max 10). */
 export function regularChannels(history = loadHistory(), now = Date.now()): string[] {
   const n = new Map<string, number>();
   for (const w of history)
-    if (!w.skip && w.ch && w.sec >= LOYALTY_WATCHED_SEC && now - w.at < 60 * 86400_000) n.set(w.ch, (n.get(w.ch) || 0) + 1);
+    if (!w.skip && w.ch && (w.yt || w.sec >= LOYALTY_WATCHED_SEC) && now - watchedAt(w) < 60 * 86400_000) n.set(w.ch, (n.get(w.ch) || 0) + 1);
   return [...n.entries()]
     .filter(([, k]) => k >= 2)
     .sort((a, b) => b[1] - a[1])
